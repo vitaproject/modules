@@ -24,8 +24,8 @@ iSection = open("input_cross_section_vertical_ideal.txt")
 
 # Parameter definitions:
 h = 3.5E-3 # m, thickness of the copper, this is not fixeed
-q_r = 5 # kg/s, mass flow water, needs to vary between 5 kg/s and 50 kg/s
-v_r = 50 # m/s, Velocity helium, remember 50 m/s being mentione this is not fixed)
+q_r = 50 # kg/s, mass flow water, needs to vary between 5 kg/s and 50 kg/s
+v_r = 25 # m/s, Velocity helium, remember 50 m/s being mentione this is not fixed)
  # Cooling type
 #ref_type = "constant_film"
 ref_type = "axial" #i.e. staight along the nodes, no out of plane
@@ -42,7 +42,7 @@ input_temperature = 373.15 # input temperature in K
 input_rho =  SI('D', 'P', input_pressure, 'T', input_temperature, 'Helium') # Helium density in kg/m3
 internal_radius = 1.156 #internal radius of the plates
 
-
+# dimension terms
 step1 = ((q_r)/(input_rho*v_r*pi)) + (internal_radius**2)
 a = 2 * internal_radius
 tg = (-a + sqrt((a**2)-(4*((internal_radius**2)-step1)))) / 2 #thickness of gap
@@ -203,7 +203,7 @@ for i in range( len(section_0)-1) :
     * (v_secc[i]**2 - v_secc[i+1]**2))\
     + (SI('D', 'T', T_ref[i+1], 'P', P_secc[i], 'helium')*float(g))\
     * float(section_1[i]-section_1[i+1])\
-    - (SI('D', 'T', T_ref[i+1], 'P', P_secc[i], 'helium')*float(g)*float(h_f[i]))
+    - (SI('D', 'T', T_ref[i+1], 'P', P_secc[i], 'helium')*float(g)*float(h_f[i+1]))
 
 
 # -------------------------------setup definitions to take updated pressure------------------------------- #
@@ -301,7 +301,7 @@ while count <= 100:
 
     count += 1
     
-    print (sqrt((1-(P_secc_new[len(P_secc_new)-2]/P_secc[len(P_secc)-2]))**2))
+    # print (sqrt((1-(P_secc_new[len(P_secc_new)-2]/P_secc[len(P_secc)-2]))**2))
     
     if sqrt((1-(P_secc_new[len(P_secc_new)-2]/P_secc[len(P_secc)-2]))**2) < 1E-8:
         break
@@ -310,7 +310,8 @@ while count <= 100:
 
 # print(h_f)
 # print(count)
-# print(P_secc)
-print(v_secc)
-print(htc_0)
+print(P_secc)
+# print(P_secc[len(P_secc)-1], htc_0[len(htc_0)-1], T_ref[len(T_ref)-1], v_secc[len(v_secc)-1])
+# print(tg, Ag)
+# print(htc_0)
 print("SUCCESS!!!")
