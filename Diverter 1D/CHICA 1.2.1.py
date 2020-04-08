@@ -41,7 +41,6 @@ prandtl_output =[]
 nusselt_output = []
 T_metal_output = []
 moodyf_output = []
-input_rho_list = []
 
 pot_0 = [] # z in W/m^2
 pot_1 = [] # DP in W/m^2
@@ -57,6 +56,18 @@ for line in iSection :
   section_0.append( float(data[0]))
   section_1.append( float(data[1]))
 
+def interpolation(list_0, list_1, value_0) :
+  for j in range( len(list_0)-1 ) :
+    if list_0[j+1] > value_0 :
+#      print list_0[j],list_0[j+1],value_0,list_1[j],list_1[j+1],\
+#            list_1[j] + (list_1[j+1]-list_1[j])/ \
+#               (list_0[j+1]-list_0[j])*(value_0-list_0[j])
+      # y2 = y0 + (y1-y0)/(x1-x0)*x2
+      return float( list_1[j] + (list_1[j+1]-list_1[j])/ \
+               (list_0[j+1]-list_0[j])*(value_0-list_0[j]) )
+  # Over maximum value...
+  return list_1[j+1]
+
 count_global = 0
 
 for MassFlow in q_r:
@@ -66,13 +77,11 @@ for MassFlow in q_r:
         Mass_Flow_input.append(MassFlow)
         Velocity_input.append(y)
         
-        
         # reset parameter
-        # pot_1[0] = 6413394.48 # W/m2
-        pot_1[0] = 8E6
+        pot_1[0] = 15E+6
         
         # Parameter definitions:
-        h = 200E-3 # m, thickness of the copper, this is not fixeed
+        h = 50E-3 # m, thickness of the copper, this is not fixeed
          # Cooling type
         #ref_type = "constant_film"
         ref_type = "axial" #i.e. staight along the nodes, no out of plane
@@ -84,12 +93,10 @@ for MassFlow in q_r:
         g = 9.81 #Gravity
         epsi = 0.00000015 # Value in m, surface roughness, only considered in Nu calc
         hf_tot = 0 #Total pressure head loss from friction and linear losses
-        input_pressure = 8E6 # input pressure in Pa
-        input_temperature = 373.15 # input temperature in K
+        input_pressure = 15E6 # input pressure in Pa
+        input_temperature = 323.15 # input temperature in K
         input_rho =  SI('D', 'P', input_pressure, 'T', input_temperature, 'Helium') # Helium density in kg/m3
         internal_radius = 1.156 #internal radius of the plates
-        
-        input_rho_list.append(input_rho)
         
         # dimension terms
         step1 = ((MassFlow)/(input_rho*y*pi)) + (internal_radius**2)
@@ -99,7 +106,7 @@ for MassFlow in q_r:
         Ag = pi*((internal_radius + tg)**2) - pi*(internal_radius**2)
         
         # Lists of data in files:
-        htc_0 = [] # Film transfer coefficient in W/K
+        htc_0 = [] # Film transfer coefficient in W/m2/K
         h_f = [] # Friction coefficient
         v_secc = [] # Speed array
         P_secc = [] # Pressure array
@@ -155,7 +162,7 @@ for MassFlow in q_r:
             film = nusselt(index)*SI('L', 'T', T_ref[index], 'P', input_pressure, 'helium') \
                     / dh()
             
-            htc_0.append(film * (2.0*pi*internal_radius*section_1[1]))
+            htc_0.append(film)
             return film
         
         moodyf = []
@@ -203,7 +210,7 @@ for MassFlow in q_r:
           # oVarsSI.write(str(v_s)+"\t"+str(re)+"\t")
           v_secc.append(v_s)
           
-            # Petukhov:
+            # Gnielinski correlation, no Petukhov correction
           return ( (fricc/8.)*re*prandtl/(1.07+12.7*sqrt(fricc/8.) \
                   * (prandtl**(2./3.)-1)) )
         
@@ -218,8 +225,8 @@ for MassFlow in q_r:
         #1st loop
         for i in range( len(section_1)-1 ) :
           
-          T_ref[i+1] = T_ref[i]+(2.0*pi*internal_radius*section_1[1]*section_0[1]) \
-                      / (MassFlow*SI('C', 'T', T_ref[i], 'P', input_pressure, 'helium')) \
+          T_ref[i+1] = T_ref[i]+(2.0*pi*internal_radius*section_1[1]) \
+                      / (q_r[j]*SI('C', 'T', T_ref[i], 'P', input_pressure, 'helium')) \
                         *pot_1[0]  
           
           # Computing the temperature of interface:
@@ -244,6 +251,7 @@ for MassFlow in q_r:
             * float(section_1[i]-section_1[i+1])\
             - (SI('D', 'T', T_ref[i+1], 'P', P_secc[i], 'helium')*float(g)*float(h_f[i]))
         
+        
         # -------------------------------setup definitions to take updated pressure------------------------------- #
         ####### iterative definitions
         
@@ -255,7 +263,7 @@ for MassFlow in q_r:
             film = nusselt_iterable(index)*SI('L', 'T', T_ref[index], 'P', P_secc[index], 'helium') \
                     / dh()
             
-            htc_0[index] = film * (2.0*pi*internal_radius*section_1[1])
+            htc_0[index] = film
             return film
         
         def nusselt_iterable(index) :
@@ -263,7 +271,7 @@ for MassFlow in q_r:
             # Reynold's number, Re = rho*v_s*Dh/mu
             # v_s = q_r/(rho*A) -> Bulk velocity (away from boundary layer)
             
-          v_s = MassFlow/(SI('D', 'T', T_ref[index], 'P', P_secc[index], 'helium')*a_r())
+          v_s = q_r[j]/(SI('D', 'T', T_ref[index], 'P', P_secc[index], 'helium')*a_r())
           re = SI('D', 'T', T_ref[index], 'P', P_secc[index], 'helium') \
                 * v_s * dh() / SI('V', 'T', T_ref[index], 'P', P_secc[index], 'helium')
           Re[index] = re
@@ -297,14 +305,14 @@ for MassFlow in q_r:
           
           Nu.append((fricc/8.)*re*prandtl/(1.07+12.7*sqrt(fricc/8.) \
                   * (prandtl**(2./3.)-1)) )
-          
+          # Gnielinski correlation, no Petukhov correction
           return ( (fricc/8.)*re*prandtl/(1.07+12.7*sqrt(fricc/8.) \
                   * (prandtl**(2./3.)-1)) )
         
         # -------------------------------Start of second procedure------------------------------- #
         ## repeat above steps with pressure estimates until pressure and temperature converge
         
-        P_secc_new = [8E6 for i in range(len(section_0))]
+        P_secc_new = [15E6 for i in range(len(section_0))]
         
         
         
@@ -315,8 +323,8 @@ for MassFlow in q_r:
             #1st loop
             for i in range( len(section_1)-1 ) :
                 
-              T_ref[i+1] = T_ref[i]+(2.0*pi*internal_radius*section_1[1]*section_0[1]) \
-                          / (MassFlow*SI('C', 'T', T_ref[i], 'P', P_secc[i], 'helium')) \
+              T_ref[i+1] = T_ref[i]+(2.0*pi*internal_radius*section_1[1]) \
+                          / (q_r[j]*SI('C', 'T', T_ref[i], 'P', P_secc[i], 'helium')) \
                             *pot_1[0]
               
               # Computing the temperature of interface:
