@@ -22,7 +22,9 @@ class non_dimensional:
         
         v_s = MassFlow/(SI('D', 'T', T_ref_i, 'P', input_pressure, 'helium')*Ag)
         re = SI('D', 'T', T_ref_i, 'P', input_pressure, 'helium') \
-                * v_s * dh / SI('V', 'T', T_ref_i, 'P', input_pressure, 'helium')
+                * v_s * dh / \
+                    (SI('V', 'T', T_ref_i, 'P', input_pressure, 'helium') /\
+                     (SI('D', 'T', T_ref_i, 'P', input_pressure, 'helium')))
           
           # fricc = 0.25 / (log10 ((epsi /(3.71*dh())) + (5.74 / (re)**0.9)))**2
         a = 2/(log(10))
@@ -37,11 +39,12 @@ class non_dimensional:
         RHS = a*((log(d/r)) + DCFA)
         fricc = (1/RHS)**2
         
-        h_1 = (fricc * deltaz * (v_s)**2) / (2 * float(g) * dh)
+        h_1 = (fricc * deltaz * (v_s)**2) / (2 * float(g) * dh) #in [m] 
         
         # smooth tube:
         # friction=(1.82*log10(re)-1.64)**(-2.)
-        pr = SI('V', 'T', T_ref_i, 'P', input_pressure, 'helium') \
+        pr = (SI('V', 'T', T_ref_i, 'P', input_pressure, 'helium')/\
+              SI('D', 'T', T_ref_i, 'P', input_pressure, 'helium')) \
             * SI('C', 'T', T_ref_i, 'P', input_pressure, 'helium') \
             / SI('L', 'T', T_ref_i, 'P', input_pressure, 'helium')
         
