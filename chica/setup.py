@@ -26,7 +26,7 @@ class setup:
         Nu = []
         Ma = []
         # dimension terms
-        A1, A2, deltaz, dh, input_power, phi, a, b, FC_input, rows, hmin = \
+        A1, A2, deltaz, dh, input_power, phi, a, b, FC_input, rows, hmin, m_row, m = \
             coolant_geometry.discrete_pipes_poloidal_flow(MassFlow, \
             input_rho, VelInput, section_0, section_1, input_power, h, n, m, channel_type, m_min, AR)
         # input definitions
@@ -42,7 +42,7 @@ class setup:
                       * A2)
         
         return htc_0, Re, Pr, Nu, h_f, dh, v_secc, T_ref, T_metal, \
-            P_secc, hf_tot, deltaz, input_power, Ma, A1, A2, phi, a, b, FC_input, rows, hmin
+            P_secc, hf_tot, deltaz, input_power, Ma, A1, A2, phi, a, b, FC_input, rows, hmin, m_row, m
 
     def looper_setup(section_0, input_temperature, P_secc, y, input_power, h, MassFlow, \
                      input_rho, section_1, epsi, deltaz, Ag, dh):

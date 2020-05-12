@@ -21,8 +21,8 @@ from runner import solver
 from setup import setup
 
 # File definitions:
-iPot = open("input_power.txt")
-iSection = open("Divertor_lower_LFS_sink.asc")
+iPot = open("Example_divertor_complex//input_power.txt")
+iSection = open("Example_divertor_complex//Divertor_lower_LFS_sink.asc")
 
 q_r = numpy.linspace(5, 50, 1)# kg/s, mass flow water, needs to vary between 5 kg/s and 50 kg/s
 v_r_input = numpy.linspace(5, 50, 1) # m/s, Velocity helium, remember 50 m/s being mentione this is not fixed)
@@ -69,8 +69,8 @@ for line in iSection :
         section_1i.append(float(data[2])/1000)
         count += 1
 
-section_0 = numpy.linspace(section_0i[0], section_0i[1], 10)
-section_1 = numpy.linspace(section_1i[0], section_1i[1], 10)
+section_0 = numpy.flip(numpy.linspace(section_0i[0], section_0i[1], 10))
+section_1 = numpy.flip(numpy.linspace(section_1i[0], section_1i[1], 10))
 
 # Parameter definitions:
 h = 200E-3 # m, thickness of the copper, this is not fixeed
@@ -79,10 +79,11 @@ input_pressure = 8E6 # input pressure in Pa
 input_temperature = 373.15 # input temperature in K
 input_rho =  SI('D', 'P', input_pressure, 'T', input_temperature, 'Helium') # Helium density in kg/m3
 n = 12 # total number of plates
-m = 2000 # number of pipes per plate
-channel_type = "rectangle" # options: rectangle, circle
-m_min = 0.5E-3 # minimum material between channels, [m]
-AR = 4
+m = 1000 # initial guess of number of pipes per plate
+channel_type = "rectangle" 
+# channel_type = "circle" 
+m_min = 1E-4 # minimum material between channels, [m]
+AR = 20
 
 count_global = 0
 
@@ -95,16 +96,16 @@ for MassFlow in q_r:
         Velocity_input.append(VelocityInput) # add first velocity term to input, needs to be in loop as changes with loop
         
         htc_0, Re, Pr, Nu, h_f, dh, v_secc, T_ref, T_metal, P_secc, hf_tot, \
-        deltaz, input_power, Ma, A1, A2, phi, a, b, FC_input, rows, hmin = \
+        deltaz, input_power, Ma, A1, A2, phi, a, b, FC_input, rows, hmin, m_row, m = \
         setup.initial_setup(section_0, input_temperature, input_pressure, \
         VelocityInput, input_power, h, MassFlow, input_rho, epsi, section_1, \
         n, m, channel_type, m_min, AR)
         
         # -------------------------------Start of first procedure------------------------------- #
-        
-        # P_secc, v_secc, hf_tot, T_metal, T_ref = solver.initial(T_ref, section_0, \
-        # section_1, MassFlow/(n*m), input_power, input_pressure, A1, dh, epsi, deltaz, T_metal, Re, \
-        # Pr, h_f, hf_tot, P_secc, v_secc, Nu, htc_0, A2, Ma)
+            
+        P_secc, v_secc, hf_tot, T_metal, T_ref = solver.initial(T_ref, section_0, \
+        section_1, MassFlow/(n*m), input_power, input_pressure, A1, dh, epsi, \
+        deltaz, T_metal, Re, Pr, h_f, hf_tot, P_secc, v_secc, Nu, htc_0, A2, Ma)
         
         # -------------------------------setup definitions to update pressure------------------- #
         
@@ -117,19 +118,19 @@ for MassFlow in q_r:
     #     section_1, MassFlow, input_power, Ag, dh, epsi, deltaz, T_metal, Re, \
     #     Pr, h_f, hf_tot, P_secc, v_secc, Nu, htc_0, Alist, Ma)
         
-        # pressure_output.append(P_secc[len(P_secc)-1])
-        # htc_0_output.append(htc_0[len(htc_0)-1])
-        # Temp_output.append(T_ref[len(T_ref)-1])
-        # Vel_output.append(v_secc[len(v_secc)-1])
-        # Ma_output.append(Ma)
-        # reynolds_output.append(Re[len(Re)-1])
-        # prandtl_output.append(Pr[len(Pr)-1])
-        # nusselt_output.append(Nu[len(Nu)-1])
-        # T_metal_output.append(T_metal[len(T_metal)-1])
-        # a_output.append(a)
-        # b_output.append(b)
-        # A1_output.append(A1)
-        # A2_output.append(A2)
+        pressure_output.append(P_secc[len(P_secc)-1])
+        htc_0_output.append(htc_0[len(htc_0)-1])
+        Temp_output.append(T_ref[len(T_ref)-1])
+        Vel_output.append(v_secc[len(v_secc)-1])
+        Ma_output.append(Ma)
+        reynolds_output.append(Re[len(Re)-1])
+        prandtl_output.append(Pr[len(Pr)-1])
+        nusselt_output.append(Nu[len(Nu)-1])
+        T_metal_output.append(T_metal[len(T_metal)-1])
+        a_output.append(a)
+        b_output.append(b)
+        A1_output.append(A1)
+        A2_output.append(A2)
         # moodyf_output.append(moodyf[len(moodyf)-1])
         # count_global += 1
         # print(count_global)

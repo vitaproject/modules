@@ -1,0 +1,294 @@
+\documentclass{article}
+\usepackage{geometry}
+\usepackage{float}
+\usepackage[table]{xcolor}
+\usepackage{graphicx}
+
+% Title Page
+\title{1D Heat Flux code explained}
+\author{Jack Taylor}
+
+
+\begin{document}
+\maketitle
+
+\newpage
+\begin{tabular}{|p{2cm}|p{9cm}|p{2cm}|}
+	\hline
+	Version Log & Change log & Date \\
+	\hline
+	1 & First Issue of Document & 15/04/2020 \\
+	\hline
+\end{tabular}
+
+\newpage
+\section{Introduction}
+The purpose of the one-dimensional (1D) heat flux code is to model the coolant flow over high heat flux Plasma Facing Components (PFC), in this case the diverter. The code is separated into multiple files where the parameters, functions and their mathematical foundations within each are explained in this document. The purpose of the code is to produce a steady state result of flow conditions within the diverter.
+
+\subsection{Applicable documents}
+
+\newpage
+\section{List of Symbols and associated code ID}
+Table \ref{tab:caption} details the parameters used in the code and their physical definitions.
+\begin{table}[H]
+	\centering
+	\begin{tabular}{|p{2cm}|p{3cm}|p{1cm}|p{7cm}|}
+		\hline
+		\cellcolor{black!10} Parameter & \cellcolor{black!10} code ID & \cellcolor{black!10} Units & \cellcolor{black!10} Comments \\
+		\hline
+		$P_{input}$ & input\_pressure & Pa & Coolant inlet pressure \\
+		\hline
+		$T_{input}$ & input\_temperature & K & Coolant inlet temperature \\
+		\hline
+		$u_{input}$ & v\_r\_input & m/s & Coolant inlet velocity, varies from 5-50 in steps of 5 \\
+		\hline
+		$\dot{Q}_{input}$ & input\_power & W/m$^{2}$ & Input power per unit area\\
+		\hline
+		$\dot{m}$ & q\_r & kg/s & Mass flow rate, varies from 5-50 in steps of 5 \\
+		\hline
+		$X$ & section\_0 & m & X coordinate of the copper panel \\
+		\hline
+		$Y$ & section\_1 & m & Y coordinate of the copper panel \\
+		\hline
+		$th_{copper}$ & h & m & Thickness of the copper panel \\
+		\hline
+		$\varepsilon$ & epsi & m & Coolant channel surface roughness \\
+		\hline
+	\end{tabular}
+	\caption{User input parameters}
+	\label{tab:caption}
+\end{table}
+
+\begin{table}[H]
+	\centering
+	\begin{tabular}{|p{2cm}|p{3cm}|p{1cm}|p{7cm}|}
+		\hline
+		\cellcolor{black!10} Parameter & \cellcolor{black!10} code ID & \cellcolor{black!10} Units & \cellcolor{black!10} Comments \\
+		\hline
+		$\rho_{input}$ & input\_rho & kg/m$^{3}$ & Input density, calculated using CoolProp, input\_pressure and input\_temperature \\
+		\hline
+		$\rho$ & D & kg/m$^{3}$ & Density downstream of input, calculated using CoolProp, input\_pressure and input\_temperature \\
+		\hline
+		$h$ & h\_1 & W/Km$^{2}$ & Film coefficient in W/Km$^{2}$\\
+		\hline
+		$h_{film}$ & htc\_0 & W/K & Film coefficient in W/K\\
+		\hline
+		$h_{linear}$ & h\_f & m & Linear head loss in pipe \\
+		\hline
+		$u$ & v\_s, v\_secc & m/s & Velocity of bulk flow downstream of inlet at a given point, list of velocities \\
+		\hline
+		$T_{coolant}$ & T\_ref & K & Temperature of coolant \\
+		\hline
+		$T_{copper}$ & T\_metal & m & Temperature of copper plate \\
+		\hline
+		$P_{coolant}$ & P\_secc & Pa & Pressure of coolant \\
+		\hline
+		$h_{total}$ & hf\_tot & K & Total head loss of pipe, sum of h\_f \\
+		\hline
+		$\dot{Q}$ & input\_power & W & Input power\\
+		\hline
+		$R_{e}$ & Re & - & Reynolds number at each discretised point \\
+		\hline
+		$P_{r}$ & Pr & - & Prandtl number at each discretised point \\
+		\hline
+		$N_{u}$ & Nu & - & Nusselt number at each discretised point \\
+		\hline
+		$A_{g}$ & Ag & m$^{2}$ & Area of annulus channel at a given discretised point \\
+		\hline
+		$A_{PFC}$ & A, Alist & m$^{2}$ & Surface area of copper panel on PFC side between two discretised points \\
+		\hline
+		$t_{g}$ & tg & m & Coolant gap thickness \\
+		\hline
+		$D_{H}$ & dh & m & Hydraulic Diameter\\
+		\hline
+		$l$ & deltaz & m & Considered length \\
+		\hline
+		$L$ & - & m & Characteristic length, not used explicitly in the code as, dependant on its use, is defined via another length parameter \\
+		\hline
+		$t_{g}$ & tg & m & Coolant gap thickness \\
+		\hline
+		$f$ & fricc & - & Moody friction coefficient \\
+		\hline
+		$c_{p}$ & C & - & Specific heat capacity, calculated using CoolProp, Pressure and Temperature \\
+		\hline
+		$\nu$ & V/D & - & Kinematic Viscosity, calculated using CoolProp, Pressure, Temperature and density \\
+		\hline
+		$\mu$ & V & - & Dynamic Viscosity, calculated using CoolProp, Pressure and Temperature \\
+		\hline
+	\end{tabular}
+	\caption{Output parameters}
+	\label{tab:caption}
+\end{table}
+
+\newpage
+\section{Code breakdown}
+
+ The code is separated into 5 files containing multiple classes, where \textit{CHICA 1.3.py} dictates the order that classes are called and implemented. The current flow of classes being called within each file is shown in Figure 1. As can be seen in Figure 1, \textit{Setup.py} and \textit{Runner.py} receive inputs and pass outputs to \textit{CHICA 1.3.py}, calling \textit{Non\_Dimensional.py} and \textit{Coolant\_Geometry.py} to perform calculations. These additional files have been separated to allow easy replacement/additional tools to be implemented, dependant on the flow conditions being considered, without disrupting the main flow of the code.
+ 
+ The classes within \textit{Setup.py} and \textit{Runner.py} are split between those that output the "first guess" computation of the flow conditions at each point and those that output the converged results. Sections 3.1 to 3.5 detail the contents of each file and its function in the 1D heat flux code.
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=1.0\linewidth]{"Code Flow"}
+	\caption{Code Flow}
+	\label{fig:code-flow}
+\end{figure}
+
+\subsection{CHICA 1.3}
+
+As explained above, \textit{CHICA 1.3.py} defines the order that classes are called as well as requiring user inputs for initial flow conditions and considered geometry, these detailed in Table 1. The name and order that classes are called in \textit{CHICA 1.3.py} is detailed below.\\
+
+(1) \textit{setup.initial\_setup} \\
+
+(2) \textit{solver.initial} \\
+
+(3) \textit{setup.looper\_setup} \\
+
+(4) \textit{solver.looper} \\
+
+This allows the "first guess" to be computed via \textit{initial}, followed by cycling over the computation via \textit{looper} until converged and a steady state result achieved. 
+
+\subsubsection{CoolProp}
+
+CoolProp is a python module that calculates flow properties dependant on user defined flow parameters and the fluid to be evaluated. Where CoolProp is required, temperature and pressure are used as inputs to compute flow conditions. Below is the general format of the tool.\\
+
+CoolProp.PropSI([Parameter to be computed], [Input parameter$_{1}$], [Parameter value$_{1}$], [Input parameter$_{2}$], [Parameter value$_{2}$], [Fluid to be evaluated])
+
+\subsection{Coolant\_Geometry.py}
+
+The \textit{coolant\_geometry} class contains two functions, \textit{a\_r\_poloidal} and \textit{a\_r\_toroidal}, where each handles purely poloidal and purely toroidal flow respectively. The functions require the physical geometry of the PFC and outputs the geometry parameters of the coolant channels. The code expects discretised geometry parameters and uses these as the basis for discretising the coolant channel.  
+
+\subsubsection{Theory}
+
+In this section the calculation for each parameter used in \textit{coolant\_geometry} is explained. \\
+
+\textbf{Coolant gap thickness, $t_{g}$} \\
+The coolant gap thickness is computed at the diverter inlet and kept constant along the length of the channel. \\
+\[\dot{V}=\frac{\dot{m}}{\rho}=uA_{g} \] \\
+\[A_{g}= \pi(X_{inlet} + t_{g})^{2} - \pi X_{inlet}^{2} \] \\
+\[t_{g}^{2} + 2X_{inlet}t_{g} - \frac{\dot{m}}{\rho u \pi} = 0\] \\
+Solve for $t_{g}$. \\
+
+\textbf{Coolant channel area, $A_{g}$} \\
+The area of the channel gap is computed at each node.
+\[A_{g,i}= \pi(X_{i} + t_{g})^{2} - \pi X_{i}^{2} \] 
+
+\textbf{Hydraulic diameter, $D_{H}$} \\
+The hydraulic diameter allows for handling non perfectly circular geometry in standard piping equations. The current version of the code treats the coolant geometry as an annulus, so the hydraulic diameter is defined as below. \\
+\[D_{H}= 2\times t_{g} \] 
+
+\textbf{PFC surface area, $A_{PFC}$} \\
+Computed using the area of a Frustum, removing the area of the top and bottom circles. \\
+\[A_{PFC,i}= \pi(X_{i} + X_{i+1}) \sqrt{(X_{i} - X_{i+1})^{2} + (Y_{i} - Y_{i+1})^{2}} \]
+
+\textbf{Input power, $\dot{Q}$} \\
+The units of power input, $\dot{Q}_{input}$, are [W/m$^{2}$]. To derive the power input in Watts the following equation is applied, where the term $\frac{X}{X + th_{copper}}$ scales the power dependant on the thickness of the copper plate.\\
+\[\dot{Q} = \dot{Q}_{input} A_{PFC} \frac{X}{X+th_{copper}} \] 
+
+\subsection{Non\_Dimensional.py}
+
+The \textit{non\_dimensional} class contains two functions, \textit{nusselt} and \textit{film\_coeff}. \textit{nusselt} returns; $N_{u}$, $R_{e}$, $P_{r}$, $v$, $f$, $h_{linear}$ and requires the flow conditions and channel geometry at the point being considered, this being; $\dot{m}$, $T_{coolant}$, $A_{g}$, $P_{input}$, $D_{H}$, $\varepsilon$ and $l$. \textit{film\_coeff} returns the heat transfer coefficient $h$ and requires; $D_{H}$, $P_{input}$, $T_{coolant}$ and $N_{u}$ as inputs.
+
+\subsubsection{Theory}
+
+In this section the calculation for each parameter used in \textit{non\_dimensional} is explained. \\
+
+\textbf{Bulk velocity, $u$} \\
+\[u=\frac{\dot{m}}{\rho A_{g}}\]
+
+\textbf{Reynolds number, $R_{e}$} \\
+Reynolds number considers the ratio of inertial to viscous forces in a fluid. For this case, the considered length $L$ is defined by the Hydraulic diameter $D_{H}$.
+\[R_{e}=\frac{\rho u L}{\nu} \]
+
+\textbf{Prandtl number, $P_{r}$} \\
+Prandtl number considers the ratio of momentum diffusivity to thermal diffusivity in a fluid.
+\[P_{r}=\frac{\mu c_{p}}{k} \]
+
+\textbf{Moody friction factor, $f$} \\
+Moody friction factor is calculated using the Colebrook equation below. \\
+
+\[\frac{1}{\sqrt{f}} = -2log_{10}\left(\frac{\epsilon/D}{3.7}+\frac{2.51}{R_{e}\sqrt{f}}\right) \] 
+
+Where \textit{f} is computed for turbulent flow in rough pipes by the Goudar-Sonnad approximation below. This approximation is valid for all Reynolds numbers.\\
+
+\[\frac{1}{\sqrt{f}} = a\left(\ln{\frac{d}{r}}+D_{CFA}\right) \]
+\[a = \frac{2}{\ln{10}}\]
+
+\[d = \frac{\ln{10} R_{e}}{5.2}\]
+
+\[b = \frac{\epsilon/D_{H}}{3.7}\]
+
+\[s = bd + \ln{d}\]
+
+\[r = s^{\frac{s}{s+1}}\]
+
+\[m = bd + \ln{\frac{d}{r}}\]
+
+\[p = \ln{\frac{r}{m}}\]
+
+\[D_{LA} = p\frac{m}{m+1}\]
+
+\[D_{CFA} = D_{LA}\left(1+\frac{p/2}{(m+1)^{2}+(p/3)(2m-1)}    \right)\] 
+
+\textbf{Nusselt number, $N_{u}$} \\
+Nusselt number considers the ratio of convective heat transfer to conductive heat transfer at the boundary of a fluid.
+\[N_{u}=\frac{h L}{k} \]
+
+Where the approximation for turbulent fluid flows in pipes, the Gnielinski correlation, is shown below and is used to compute the Nusselt number.  
+
+\[N_{u}=\frac{(f/8)R_{e}P_{r}}{1.07+12.7\sqrt{f/8}(P_{r}^{2/3}-1)} \]
+
+The validity criteria for this approximation are:
+
+\[0.5 < P_{r} < 2000\]
+\[3000 < R_{e} < 5\times10^{6}\]
+
+\subsection{Setup.py}
+
+The class \textit{setup} contains two functions, \textit{initial\_setup} and \textit{looper\_setup}, where these functions initialise the input and output sets for the solvers in \textit{Runner.py} as well as calculating the initial flow conditions and geometry parameters through implementing \textit{non\_dimensional} and \textit{coolant\_geometry}. No calculations are performed in the body of this code outside those called from other classes.
+
+\subsection{Runner.py}
+The \textit{runner} class contains two functions \textit{initial} and \textit{looper}, where \textit{initial} performs an initial calculation of the temperature at each node based on constant pressure, updating the pressure term retrospectively based on the temperature at each discretised point. The \textit{looper} function takes this pressure output and recalculates the flow conditions at each discretised point, again updating the output pressure. When the pressure delta at each point between loops is $<10^{-8}$ the result is considered converged and so the therefore a steady state result. \\
+
+The calculation steps are as follows: \\
+
+\textbf{\textit{initial}}\\
+
+(1) Compute $T_{coolant, i+1}$ at each node, where $c_{p,i}$ is calculated using \textit{CoolProp}, $T_{coolant,i}$ and $P_{coolant,i}$:
+\[T_{coolant, i+1}=T_{coolant, i} + \frac{\dot{Q}_{i}} {c_{p, i}\dot{m}}\] 
+
+(2) Implement \textit{non\_dimensional} to return at each node $[N_{u}, R_{e}, P_{r}, h_{linear}, u]_{i+1}$ 
+
+(3) Compute at each node $T_{metal, i+1}$
+\[T_{metal, i+1} = T_{coolant, i+1} + \frac{\dot{Q}_{i}}{h_{i+1} A_{PFC, i}}\]
+
+(4) Implement \textit{film\_coeff} and compute $h\_{film}$ at each node
+\[h_{film,i} = h_{i} A_{PFC, i}\]
+
+(5) Compute $P_{coolant}$ at each node, where $\rho_{i}$ is calculated using \textit{CoolProp}, $T_{coolant,i}$ and $P_{coolant,i}$:
+\[P_{coolant, i+1} = P_{coolant, i} + \frac{\rho_{i}}{2}(u^{2}_{i} - u^{2}_{i+1}) + \rho_{i} g (y_{i}-y_{i+1}) - \rho_{i} g h_{1, i+1}\]
+
+This provides the first computation of the flow conditions at each node.\\
+
+\textbf{\textit{looper}}\\
+
+\textit{looper} repeats the steps of \textit{initial}, taking the pressure computed in step (5) as input for step (1), as opposed to the constant pressure input of \textit{initial}. The final pressure is then compared to this input pressure, checking against the \textit{Error} pass criteria below. \textit{Error} $>10^{-8}$ will restart the computation with the most recent pressure output as input for the new computation. For \textit{Error} $<10^{-8}$, the final pressure distribution is considered converged and so the result steady state.
+
+\[Error = \sqrt{\left(1-\frac{P_{in}}{P_{out}}\right)^{2}}\]
+
+\newpage
+
+\section{Future updates}
+The code is currently in very early stages and requires further updates to be applicable for industrial use. The following points have been highlighted as areas for improvement.
+
+\begin{itemize}
+	\item \textit{initial} \& \textit{looper}: Reduce these into a single function, does not need to be separated for a "first guess" followed by separate cycling function.
+	\item Geometry: The current assumption of an annulus is not useful, needs to be updated to consider more appropriate geometry i.e. discrete piping, micro channels, multiple discrete panels as opposed to a continuous swept geometry.
+	\item Time stepping: Include time stepping to capture transient effects.
+	\item CFD and FEA: Allow for CFD and FEA inputs
+	\item Add in references to this document
+	
+\end{itemize}
+
+
+\end{document}          
