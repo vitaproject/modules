@@ -50,28 +50,44 @@ class coolant_geometry:
     def discrete_pipes_poloidal_flow(MassFlow, input_rho, VelInput, section_0, section_1, input_power, h, n, m, channel_type, m_min, AR):
         
         deltaz = sqrt((section_1[1] - section_1[0])**2 + (section_0[1] - section_0[0])**2) #Length in [m], lenght of pipe section being considered
-        thetap = 2*pi/n - (1*pi/180) # angle of the panel
-        thetat = thetap / m # phi
         FC_input = []
         z = -2.82733
         
         if channel_type == "rectangle":
             
+            thetap = 2*pi/n - (1*pi/180) # angle of the panel
+            thetat = thetap / m # phi
             r2 = section_0[0] + m_min
             x = r2
             y = x * tan(thetat/2)
             R = sqrt(x ** 2 + y ** 2)
             thetam = 2 * asin((m_min/2)/R)
             
-            rows = 1
+            thetap_old = 0
+            theta = 0
+            
+            while sqrt((thetap_old - thetap) ** 2) > 1E-30:
+                
+                thetap_old = thetap
+                # thetap = 2*pi/n - (1*pi/180) - (thetat + thetam) # angle of the panel
+                thetat = thetap / m # phi
+                r2 = section_0[0] + m_min
+                x = r2
+                y = x * tan(thetat/2)
+                R = sqrt(x ** 2 + y ** 2)
+                thetam = 2 * asin((m_min/2)/R)
+                thetap = 2*pi/n - (1*pi/180) - (thetat + thetam) # angle of the panel
             
             theta = thetat - thetam
+            rows = 1
+            m_new = m
             
             # Minimum material thickness between channels check
             while theta < 0.0:
                 
                 rows += 1
-                thetat = thetap/(m/rows)
+                m_new = m / rows
+                thetat = thetap/(m_new)
                 theta = thetat - thetam
                 
             a = 2 * R * sin(theta/2) # a
@@ -81,12 +97,12 @@ class coolant_geometry:
             phi = asin((a/2)/R)
             ARi = b/a
             rowsi = rows # set new variable rowsi to update in next loop
-            m_row = m/rows # number of channels per row
-            m_new = m
+            m_row = m_new
             b_new = b
             
             # Channel aspect ratio check
             while ARi > AR:
+                
                 rowsi += 1
                 b_new = b * (rows / rowsi)
                 ARi = b_new/a
@@ -130,23 +146,41 @@ class coolant_geometry:
             
         else: # circular geometry
             
+            thetap = 2*pi/n - (1*pi/180) # angle of the panel
+            thetat = thetap / m # phi
             dh = 2 * sqrt((MassFlow/(n*m))/(pi*input_rho*VelInput))
             R = section_0[0] + m_min + dh/2
             thetam = 2 * asin(((dh/2) + (0.5 * m_min))/((dh/2) + R))
-            rows = 1
             
+            thetap_old = 0
+            theta = 0
+            
+            while sqrt((thetap_old - thetap) ** 2) > 1E-30:
+                
+                thetap_old = thetap
+                thetat = thetap / m # phi
+                dh = 2 * sqrt((MassFlow/(n*m))/(pi*input_rho*VelInput))
+                R = section_0[0] + m_min + dh/2
+                thetam = 2 * asin(((dh/2) + (0.5 * m_min))/((dh/2) + R))
+                thetap = 2*pi/n - (1*pi/180) - (thetat + thetam) # angle of the panel
+            
+            print(thetap*180/pi)
+            
+            rows = 1
             theta = thetat - thetam
+            m_new = m
             
             while theta < 0:
                 
-                thetat = 2*pi/(n*m//rows)
-                theta = thetat - thetam
-                channels = m/(rows + 1)
                 rows += 1
+                m_new = m / rows
+                thetat = thetap/(m_new)
+                theta = thetat - thetam
             
-            m_row = m/rows
+            m = m_new * rows
             A1 = pi * ((dh/2) ** 2)
             A2 = dh * deltaz
+            m_row = m/rows
             
             FC_input.append([R + (dh/2), 0, 0]) # centre point
             FC_input.append([R + (dh), 0, 0]) # radius point
@@ -179,5 +213,5 @@ class coolant_geometry:
         
         f.close()
         
-        return A1, A2, deltaz, dh, input_power, phi, a, b, FC_input, rows, hmin, m_row, m
+        return A1, A2, deltaz, dh, input_power, phi, a, b, FC_input, rows, hmin, m_row, m, thetap
             

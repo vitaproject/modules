@@ -45,6 +45,7 @@ A1_output = []
 A2_output = []
 hmin_output = []
 rows_output = []
+thetap_output = []
 
 section_0i = [] # r in m
 section_1i = [] # z in m
@@ -80,8 +81,8 @@ epsi = 0.00000015 # Value in m, surface roughness, only considered in Nu calc
 input_pressure = 8E6 # input pressure in Pa
 input_temperature = 373.15 # input temperature in K
 input_rho =  SI('D', 'P', input_pressure, 'T', input_temperature, 'Helium') # Helium density in kg/m3
-channel_type = "rectangle" 
-# channel_type = "circle" 
+#channel_type = "rectangle" 
+channel_type = "circle" 
 m_min = 1E-4 # minimum material between channels, [m]
 AR = 5
 
@@ -98,7 +99,7 @@ for MassFlow in q_r:
         Velocity_input.append(VelocityInput) # add first velocity term to input, needs to be in loop as changes with loop
         
         htc_0, Re, Pr, Nu, h_f, dh, v_secc, T_ref, T_metal, P_secc, hf_tot, \
-        deltaz, input_power, Ma, A1, A2, phi, a, b, FC_input, rows, hmin, m_row, m = \
+        deltaz, input_power, Ma, A1, A2, phi, a, b, FC_input, rows, hmin, m_row, m, thetap = \
         setup.initial_setup(section_0, input_temperature, input_pressure, \
         VelocityInput, input_power, h, MassFlow, input_rho, epsi, section_1, \
         n_input, m_input, channel_type, m_min, AR)
@@ -135,6 +136,7 @@ for MassFlow in q_r:
         A2_output.append(A2)
         hmin_output.append(hmin)
         rows_output.append(rows)
+        thetap_output.append(thetap)
         # moodyf_output.append(moodyf[len(moodyf)-1])
         # count_global += 1
         # print(count_global)
