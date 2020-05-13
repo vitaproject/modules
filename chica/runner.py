@@ -41,8 +41,12 @@ class solver:
             P_secc[i+1] = P_secc[i] + (0.5*SI('D', 'T', T_ref[i+1], 'P', P_secc[i], 'helium') \
             * (v_secc[i]**2 - v_secc[i+1]**2))\
             + (SI('D', 'T', T_ref[i+1], 'P', P_secc[i], 'helium')*float(g))\
-            * float(section_1[i]-section_1[i+1])\
+            * float(section_1[i+1]-section_1[i])\
             - (SI('D', 'T', T_ref[i+1], 'P', P_secc[i], 'helium')*float(g)*float(h_f[i+1]))
+            
+            # print([(0.5*SI('D', 'T', T_ref[i+1], 'P', P_secc[i], 'helium') * (v_secc[i]**2 - v_secc[i+1]**2)), \
+            # (SI('D', 'T', T_ref[i+1], 'P', P_secc[i], 'helium')*float(g)) * float(section_1[i+1]-section_1[i]), \
+            # - (SI('D', 'T', T_ref[i+1], 'P', P_secc[i], 'helium')*float(g)*float(h_f[i+1]))])
             
         hf_tot[0] = h_f[0]
         

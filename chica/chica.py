@@ -43,6 +43,8 @@ a_output = []
 b_output = []
 A1_output = []
 A2_output = []
+hmin_output = []
+rows_output = []
 
 section_0i = [] # r in m
 section_1i = [] # z in m
@@ -78,12 +80,10 @@ epsi = 0.00000015 # Value in m, surface roughness, only considered in Nu calc
 input_pressure = 8E6 # input pressure in Pa
 input_temperature = 373.15 # input temperature in K
 input_rho =  SI('D', 'P', input_pressure, 'T', input_temperature, 'Helium') # Helium density in kg/m3
-n = 12 # total number of plates
-m = 1000 # initial guess of number of pipes per plate
 channel_type = "rectangle" 
 # channel_type = "circle" 
 m_min = 1E-4 # minimum material between channels, [m]
-AR = 20
+AR = 5
 
 count_global = 0
 
@@ -91,6 +91,8 @@ for MassFlow in q_r:
     
     for VelocityInput in v_r_input:
         
+        n_input = 12 # total number of plates
+        m_input = 1000 # initial guess of number of pipes per plate
         input_power = [10E6 for i in range(len(section_0)-1)] # W/m2
         Mass_Flow_input.append(MassFlow) # add first mass flow term to input, needs to be in loop as changes with loop
         Velocity_input.append(VelocityInput) # add first velocity term to input, needs to be in loop as changes with loop
@@ -99,12 +101,12 @@ for MassFlow in q_r:
         deltaz, input_power, Ma, A1, A2, phi, a, b, FC_input, rows, hmin, m_row, m = \
         setup.initial_setup(section_0, input_temperature, input_pressure, \
         VelocityInput, input_power, h, MassFlow, input_rho, epsi, section_1, \
-        n, m, channel_type, m_min, AR)
+        n_input, m_input, channel_type, m_min, AR)
         
         # -------------------------------Start of first procedure------------------------------- #
             
         P_secc, v_secc, hf_tot, T_metal, T_ref = solver.initial(T_ref, section_0, \
-        section_1, MassFlow/(n*m), input_power, input_pressure, A1, dh, epsi, \
+        section_1, MassFlow/(n_input*m), input_power, input_pressure, A1, dh, epsi, \
         deltaz, T_metal, Re, Pr, h_f, hf_tot, P_secc, v_secc, Nu, htc_0, A2, Ma)
         
         # -------------------------------setup definitions to update pressure------------------- #
@@ -131,6 +133,8 @@ for MassFlow in q_r:
         b_output.append(b)
         A1_output.append(A1)
         A2_output.append(A2)
+        hmin_output.append(hmin)
+        rows_output.append(rows)
         # moodyf_output.append(moodyf[len(moodyf)-1])
         # count_global += 1
         # print(count_global)

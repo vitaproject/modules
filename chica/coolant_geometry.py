@@ -50,8 +50,8 @@ class coolant_geometry:
     def discrete_pipes_poloidal_flow(MassFlow, input_rho, VelInput, section_0, section_1, input_power, h, n, m, channel_type, m_min, AR):
         
         deltaz = sqrt((section_1[1] - section_1[0])**2 + (section_0[1] - section_0[0])**2) #Length in [m], lenght of pipe section being considered
-        thetat = 2*pi/(n*m) # phi
-        thetap = 2*pi/n - 1 # angle of the panel
+        thetap = 2*pi/n - (1*pi/180) # angle of the panel
+        thetat = thetap / m # phi
         FC_input = []
         z = -2.82733
         
@@ -62,6 +62,7 @@ class coolant_geometry:
             y = x * tan(thetat/2)
             R = sqrt(x ** 2 + y ** 2)
             thetam = 2 * asin((m_min/2)/R)
+            
             rows = 1
             
             theta = thetat - thetam
@@ -69,11 +70,10 @@ class coolant_geometry:
             # Minimum material thickness between channels check
             while theta < 0.0:
                 
-                thetat = 2*pi/(n*m//rows)
-                theta = thetat - thetam
-                channels = m/(rows + 1)
                 rows += 1
-            
+                thetat = thetap/(m/rows)
+                theta = thetat - thetam
+                
             a = 2 * R * sin(theta/2) # a
             b = (MassFlow/(n*m)) / (input_rho * VelInput * a) # b
             dh = 2 * a * b / (a + b)
@@ -102,14 +102,14 @@ class coolant_geometry:
             
             # for i in range(0, rows):
             
-                # x1 = (R * cos(thetai + phi) + (i * ((b + m_min) * cos(thetai)))) # x1
-                # y1 = (R * sin(thetai + phi) + (i * ((b + m_min) * sin(thetai)))) # y1
-                # x2 = (R * cos(thetai + phi) + b * cos(thetai)) + (i * ((b + m_min) * cos(thetai))) # x2
-                # y2 = (R * sin(thetai + phi) + b * sin(thetai)) + (i * ((b + m_min) * sin(thetai))) # y2
-                # x3 = (R * cos(thetai - phi) + b * cos(thetai)) + (i * ((b + m_min) * cos(thetai))) # x4
-                # y3 = (R * sin(thetai - phi) + b * sin(thetai)) + (i * ((b + m_min) * sin(thetai))) # y4
-                # x4 = (R * cos(thetai - phi)) + (i * ((b + m_min) * cos(thetai))) # x3
-                # y4 = (R * sin(thetai - phi)) + (i * ((b + m_min) * sin(thetai))) # y3
+            #     x1 = (R * cos(thetai + phi) + (i * ((b + m_min) * cos(thetai)))) # x1
+            #     y1 = (R * sin(thetai + phi) + (i * ((b + m_min) * sin(thetai)))) # y1
+            #     x2 = (R * cos(thetai + phi) + b * cos(thetai)) + (i * ((b + m_min) * cos(thetai))) # x2
+            #     y2 = (R * sin(thetai + phi) + b * sin(thetai)) + (i * ((b + m_min) * sin(thetai))) # y2
+            #     x3 = (R * cos(thetai - phi) + b * cos(thetai)) + (i * ((b + m_min) * cos(thetai))) # x4
+            #     y3 = (R * sin(thetai - phi) + b * sin(thetai)) + (i * ((b + m_min) * sin(thetai))) # y4
+            #     x4 = (R * cos(thetai - phi)) + (i * ((b + m_min) * cos(thetai))) # x3
+            #     y4 = (R * sin(thetai - phi)) + (i * ((b + m_min) * sin(thetai))) # y3
             
             x1 = (R * cos(thetai + phi)) # x1
             y1 = (R * sin(thetai + phi)) # y1
@@ -161,9 +161,15 @@ class coolant_geometry:
             for j, y in enumerate(i):
                 i[j] = y * 1000
         
-        for i in range(len(section_1)-1):
-            input_power[i] = input_power[i] * A2 # power scaled for incident area or pipe
-        
+        # scale power input
+        for i in range(len(input_power)):
+            
+            A0 = pi * deltaz * (section_0[i] + section_0[i+1]) # area of a frustum between nodes
+            P0 = A0 * input_power[i] # power in [W] for the defined frustum
+            Pp = P0 / n # divide by number of plates
+            Ppp = Pp / m # divide by number of pipes per plate
+            input_power[i] = Ppp # updates power input list
+            
         f = open("Example_divertor_complex//coolant_geometry.asc", "w")
 
         for line in FC_input:
