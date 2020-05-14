@@ -20,12 +20,35 @@ import numpy
 from runner import solver
 from setup import setup
 
+#################################
 # File definitions:
 iPot = open("Example_divertor_complex//input_power.txt")
 iSection = open("Example_divertor_complex//Divertor_lower_LFS_sink.asc")
 
+# Sensitivity study parameters:
 q_r = numpy.linspace(5, 50, 1)# kg/s, mass flow water, needs to vary between 5 kg/s and 50 kg/s
 v_r_input = numpy.linspace(5, 50, 1) # m/s, Velocity helium, remember 50 m/s being mentione this is not fixed)
+
+# Overall parameter definitions:
+# Tokamak:
+n_input = 12 # total number of plates
+m_input = 1000 # number of pipes per plate (may change for rectangular sections)
+input_power = [10E6 for i in range(len(section_0)-1)] # W/m2
+# Cooling channel
+epsi = 0.00000015 # Value in m, surface roughness, only considered in Nu calc
+input_pressure = 8E6 # input pressure in Pa
+input_temperature = 373.15 # input temperature in K
+
+# Channel geometry:
+#channel_type = "rectangle" 
+channel_type = "circle" 
+h = 200E-3 # m, thickness of the copper, this is not fixeed
+m_min = 1E-4 # minimum material between channels, [m]
+AR = 5
+
+################################
+# Initial calculated parameters
+input_rho =  SI('D', 'P', input_pressure, 'T', input_temperature, 'Helium') # Helium density in kg/m3
 
 pressure_output = []
 htc_0_output = []
@@ -75,16 +98,6 @@ for line in iSection :
 section_0 = numpy.flip(numpy.linspace(section_0i[0], section_0i[1], 10))
 section_1 = numpy.flip(numpy.linspace(section_1i[0], section_1i[1], 10))
 
-# Parameter definitions:
-h = 200E-3 # m, thickness of the copper, this is not fixeed
-epsi = 0.00000015 # Value in m, surface roughness, only considered in Nu calc
-input_pressure = 8E6 # input pressure in Pa
-input_temperature = 373.15 # input temperature in K
-input_rho =  SI('D', 'P', input_pressure, 'T', input_temperature, 'Helium') # Helium density in kg/m3
-#channel_type = "rectangle" 
-channel_type = "circle" 
-m_min = 1E-4 # minimum material between channels, [m]
-AR = 5
 
 count_global = 0
 
@@ -92,9 +105,6 @@ for MassFlow in q_r:
     
     for VelocityInput in v_r_input:
         
-        n_input = 12 # total number of plates
-        m_input = 1000 # initial guess of number of pipes per plate
-        input_power = [10E6 for i in range(len(section_0)-1)] # W/m2
         Mass_Flow_input.append(MassFlow) # add first mass flow term to input, needs to be in loop as changes with loop
         Velocity_input.append(VelocityInput) # add first velocity term to input, needs to be in loop as changes with loop
         
