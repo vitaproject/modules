@@ -142,6 +142,8 @@ class coolant_geometry:
             FC_input.append([x4, y4, z])
             FC_input.append([x1, y1, z])
             
+            guide_wire = [[section_0[0], section_1[0], 0], [section_0[-1], section_1[-1], 0]]
+            
             hmin = ((x2 - x1) * rows) + (m_min * (rows - 1))
             
         else: # circular geometry
@@ -195,6 +197,10 @@ class coolant_geometry:
             for j, y in enumerate(i):
                 i[j] = y * 1000
         
+        for i in guide_wire:
+            for j, y in enumerate(i):
+                i[j] = y * 1000
+        
         # scale power input
         for i in range(len(input_power)):
             
@@ -213,5 +219,57 @@ class coolant_geometry:
         
         f.close()
         
+        f = open("Example_divertor_complex//coolant_guide.asc", "w")
+
+        for line in guide_wire:
+            for i in line:
+                f.write(str(i) + "\t")
+            f.write("\n")
+        
+        f.close()
+        
         return A1, A2, deltaz, dh, input_power, phi, a, b, FC_input, rows, hmin, m_row, m, thetap
             
+    
+    
+    def discrete_pipes_toroidal_flow(MassFlow, input_rho, VelInput, section_0, section_1, input_power, h, n, m, channel_type, m_min, AR):
+        
+        print(m)
+        
+        A1, A2, deltaz, dh, input_power, phi, a, b, FC_input, rows, hmin, m_row, thetap = [0 for i in range(13)]
+        FC_input = []
+        
+        h = section_1[-1] - section_1[0]
+        a = (h - ((m+1)*m_min)) / m
+        b = (MassFlow / (m * n)) / (input_rho * a * VelInput)
+        theta = atan((h)/(section_0[-1] - section_0[0]))
+        z = 0.0
+        A1 = a * b
+        
+        x1 = (section_0[0] + m_min + (a + m_min)/tan(theta))
+        y1 = - 0.5*a
+        x2 = x1
+        y2 = - y1
+        x3 = x1 + b
+        y3 = y2
+        x4 = x3
+        y4 = y1
+        
+        FC_input.append([x1, y1, z])
+        FC_input.append([x2, y2, z])
+        FC_input.append([x3, y3, z])
+        FC_input.append([x4, y4, z])
+        FC_input.append([x1, y1, z])
+        
+        for i in FC_input:
+            for j, y in enumerate(i):
+                i[j] = y * 1000
+        
+        f = open("Example_divertor_complex//coolant_geometry.asc", "w")
+
+        for line in FC_input:
+            for i in line:
+                f.write(str(i) + "\t")
+            f.write("\n")
+        
+        return A1, A2, deltaz, dh, input_power, phi, a, b, FC_input, rows, hmin, m_row, m, thetap
