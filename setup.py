@@ -85,7 +85,9 @@ setup(
     ],
     install_requires=['numpy', 'cython>=0.28', 'CoolProp'],
     packages=find_packages(),
-    package_data={'chica': ['my_package/data_files/my_data_file.csv']},
+    package_data={'chica': ['example_data/beam_dump/*.txt',
+                            'example_data/divertor_complex/*',
+                            'example_data/divertor_simple/*.txt']},
     include_package_data=True,
     zip_safe=False,
     ext_modules=extensions

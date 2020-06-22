@@ -1,7 +1,9 @@
-from coolant_geometry import coolant_geometry
-from non_dimensional import non_dimensional
 
-class setup:
+from chica.coolant_geometry import coolant_geometry
+from chica.non_dimensional import non_dimensional
+
+
+class Setup:
     
     def __init__(self):
         

@@ -204,7 +204,7 @@ class coolant_geometry:
             Ppp = Pp / m # divide by number of pipes per plate
             input_power[i] = Ppp # updates power input list
             
-        f = open("Example_divertor_complex//coolant_geometry.asc", "w")
+        f = open("example_data/divertor_complex/coolant_geometry.asc", "w")
 
         for line in FC_input:
             for i in line:

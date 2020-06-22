@@ -1,7 +1,9 @@
+
 from CoolProp.CoolProp import PropsSI as SI
 from math import*
 
-g = 9.81 # gravity
+G = 9.81  # gravity
+
 
 class non_dimensional:
     
@@ -35,7 +37,7 @@ class non_dimensional:
         RHS = a*((log(d/r)) + DCFA)
         fricc = (1/RHS)**2
         
-        h_1 = (fricc * deltaz * (v_s)**2) / (2 * float(g) * dh) #in [m] 
+        h_1 = (fricc * deltaz * (v_s)**2) / (2 * float(G) * dh) #in [m]
         
         # smooth tube:
         # friction=(1.82*log10(re)-1.64)**(-2.)
