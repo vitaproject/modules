@@ -32,7 +32,7 @@ v_r_input = numpy.linspace(5, 50, 1) # m/s, Velocity helium, remember 50 m/s bei
 # Overall parameter definitions:
 # Tokamak:
 n_input = 12 # total number of plates
-m_input = 10 # number of pipes per plate (may change for rectangular sections)
+m_input = 50 # number of pipes per plate (may change for rectangular sections)
 input_power = [10E6 for i in range(9)] # W/m2
 # Cooling channel
 epsi = 0.00000015 # Value in m, surface roughness, only considered in Nu calc
@@ -44,7 +44,7 @@ channel_type = "rectangle"
 #   channel_type = "circle" 
 h = 200E-3 # m, thickness of the copper, this is not fixeed
 m_min = 1E-4 # minimum material between channels, [m]
-AR = 5
+AR = 1
 
 ################################
 # Initial calculated parameters
@@ -97,7 +97,6 @@ for line in iSection :
 
 section_0 = numpy.flip(numpy.linspace(section_0i[0], section_0i[1], 10))
 section_1 = numpy.flip(numpy.linspace(section_1i[0], section_1i[1], 10))
-
 
 count_global = 0
 
