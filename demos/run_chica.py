@@ -5,14 +5,14 @@ from CoolProp.CoolProp import PropsSI as SI
 import numpy
 # import csv
 from chica.utility import get_example_data_path
-from chica.runner import Solver
-from chica.setup import Setup
+from chica.runner import initial
+from chica.geometry_setup import initial_setup
 
 
 #################################
 # Input definitions:
 
-isection_path = get_example_data_path("example_data/divertor_complex/Divertor_lower_LFS_sink.asc")
+isection_path = get_example_data_path("divertor_complex/Divertor_lower_LFS_sink.asc")
 
 # Sensitivity study parameters:
 q_r = numpy.linspace(5, 50, 1)  # kg/s, mass flow water, needs to vary between 5 kg/s and 50 kg/s
@@ -100,17 +100,17 @@ for massflow in q_r:
 
         htc_0, Re, Pr, Nu, h_f, dh, v_secc, T_ref, T_metal, P_secc, hf_tot, \
         deltaz, input_power, Ma, A1, A2, phi, a, b, FC_input, rows, hmin, m_row, m, thetap = \
-            Setup.initial_setup(section_0, input_temperature, input_pressure, \
-                                velocityinput, input_power, h, massflow, input_rho, epsi, section_1, \
-                                n_input, m_input, channel_type, m_min, AR)
+            initial_setup(section_0, input_temperature, input_pressure, \
+                          velocityinput, input_power, h, massflow, input_rho, epsi, section_1, \
+                          n_input, m_input, channel_type, m_min, AR)
 
         # -------------------------------Start of first procedure------------------------------- #
 
-        P_secc, v_secc, hf_tot, T_metal, T_ref = Solver.initial(T_ref, section_0, \
-                                                                section_1, massflow / (n_input * m), input_power,
-                                                                input_pressure, A1, dh, epsi, \
-                                                                deltaz, T_metal, Re, Pr, h_f, hf_tot, P_secc, v_secc,
-                                                                Nu, htc_0, A2, Ma)
+        P_secc, v_secc, hf_tot, T_metal, T_ref = initial(T_ref, section_0, \
+                                                         section_1, massflow / (n_input * m), input_power,
+                                                         input_pressure, A1, dh, epsi, \
+                                                         deltaz, T_metal, Re, Pr, h_f, hf_tot, P_secc, v_secc,
+                                                         Nu, htc_0, A2, Ma)
 
         # -------------------------------setup definitions to update pressure------------------- #
 
