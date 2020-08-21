@@ -340,7 +340,7 @@ class coolant_geometry:
             for j, y in enumerate(i):
                 i[j] = y * 1000
 
-        f = open("Example_divertor_complex//coolant_geometry.asc", "w")
+        f = open("coolant_geometry.asc", "w")
 
         for line in FC_input:
             for i in line:
@@ -349,7 +349,7 @@ class coolant_geometry:
 
         f.close()
 
-        f = open("Example_divertor_complex//coolant_guide.asc", "w")
+        f = open("coolant_guide.asc", "w")
 
         for line in guide_wire:
             for i in line:
