@@ -3,7 +3,8 @@
 # thickness of the gap tg [m]
 
 from math import *
-import sympy
+import numpy
+
 
 class coolant_geometry:
     
@@ -47,7 +48,7 @@ class coolant_geometry:
         
         return Ag, tg, dh, deltaz, Alist, input_power
     
-    def discrete_pipes_poloidal_flow(MassFlow, input_rho, VelInput, section_0, section_1, input_power, h, n, m, channel_type, m_min, AR):
+    def poloidal_flow(MassFlow, input_rho, VelInput, section_0, section_1, input_power, h, n, m, channel_type, m_min, AR):
         
         deltaz = sqrt((section_1[1] - section_1[0])**2 + (section_0[1] - section_0[0])**2) #Length in [m], lenght of pipe section being considered
         FC_input = []
@@ -114,18 +115,6 @@ class coolant_geometry:
             A1 = a * b # A1, area of the pipe with fluid flowing in a single row
             
             thetai = 0.0 # for one output, symmetric about the x axis
-            #thetai = i * 2*theta  #for multiple outputs
-            
-            # for i in range(0, rows):
-            
-            #     x1 = (R * cos(thetai + phi) + (i * ((b + m_min) * cos(thetai)))) # x1
-            #     y1 = (R * sin(thetai + phi) + (i * ((b + m_min) * sin(thetai)))) # y1
-            #     x2 = (R * cos(thetai + phi) + b * cos(thetai)) + (i * ((b + m_min) * cos(thetai))) # x2
-            #     y2 = (R * sin(thetai + phi) + b * sin(thetai)) + (i * ((b + m_min) * sin(thetai))) # y2
-            #     x3 = (R * cos(thetai - phi) + b * cos(thetai)) + (i * ((b + m_min) * cos(thetai))) # x4
-            #     y3 = (R * sin(thetai - phi) + b * sin(thetai)) + (i * ((b + m_min) * sin(thetai))) # y4
-            #     x4 = (R * cos(thetai - phi)) + (i * ((b + m_min) * cos(thetai))) # x3
-            #     y4 = (R * sin(thetai - phi)) + (i * ((b + m_min) * sin(thetai))) # y3
             
             x1 = (R * cos(thetai + phi)) # x1
             y1 = (R * sin(thetai + phi)) # y1
@@ -198,11 +187,14 @@ class coolant_geometry:
         # scale power input
         for i in range(len(input_power)):
             
-            A0 = pi * deltaz * (section_0[i] + section_0[i+1]) # area of a frustum between nodes
-            P0 = A0 * input_power[i] # power in [W] for the defined frustum
-            Pp = P0 / n # divide by number of plates
-            Ppp = Pp / m # divide by number of pipes per plate
-            input_power[i] = Ppp # updates power input list
+            # A0 = pi * deltaz * (section_0[i] + section_0[i+1]) # area of a frustum between nodes
+            # P0 = A0 * input_power[i] # power in [W] for the defined frustum
+            # Pp = P0 / n # divide by number of plates
+            # Ppp = Pp / m # divide by number of pipes per plate
+            # input_power[i] = Ppp # updates power input list
+
+            P0 = A2 * input_power[i]  # assigns power in [W]
+            input_power[i] = P0  # updates power input list
             
         f = open("example_data/divertor_complex/coolant_geometry.asc", "w")
 
@@ -214,4 +206,156 @@ class coolant_geometry:
         f.close()
         
         return A1, A2, deltaz, dh, input_power, phi, a, b, FC_input, rows, hmin, m_row, m, thetap
-            
+
+    def Qdot_toroidal_flow(SxW, SyH, m, section_0, section_1, AR, rows, MassFlow, input_rho, VelInput, fixed_parameter,
+                           m_min):
+
+        # geometry parameters are driving, so flow parameters calculated after
+        # either mass flow or velicty fixed
+        # AR = W/H, will likely be provided as H/W
+
+        d = sqrt((section_1[-1] - section_1[0]) ** 2 + (section_0[-1] - section_0[0]) ** 2)
+        Sx = d / m
+        a = Sx / SxW
+        b = a * (1 / AR)
+
+        coolant_geometry.coordinates("toroidal", m, rows, d, a, sectionCoord, m_min, b)
+
+        A = a * b
+        A0 = A * m * rows
+
+        if fixed_parameter is "MassFlow":
+            VelInput = MassFlow / (A0 * input_rho)
+
+        elif fixed_parameter is "Velocity":
+            MassFlow = VelInput * input_rho * A0
+        else:
+            print("SOMETHING HAS GONE TERRIBLY WRONG")
+
+        return
+
+    def toroidal_flow(MassFlow, input_rho, VelInput, section_0, section_1, input_power, h, n, m, channel_type, m_min,
+                      AR):
+
+        A0 = MassFlow / (input_rho * VelInput)
+        sectionCoord = numpy.array([[section_0[0], section_1[0]], [section_0[-1], section_1[-1]]])
+        d = sqrt((section_1[-1] - section_1[0]) ** 2 + (section_0[-1] - section_0[0]) ** 2)
+        a = (d - (m_min * (m + 1))) / m
+        b = A0 / (a * m)
+
+        rows = 1
+        b_orig = b
+        m_orig = m
+
+        while a / b != AR:
+
+            if AR > 1 and a > b and a / b > AR:
+                print("Gate 1")
+                a, b = coolant_geometry.adjust_AR(a, b, AR)
+
+            if AR > 1 and a > b and a / b < AR:
+                print("Gate 2")
+                rows, b, m = coolant_geometry.add_rows(rows, b, b_orig, m, m_orig, a, AR)
+                a, b = coolant_geometry.adjust_AR(a, b, AR)
+
+            if AR > 1 and a < b and a / b < AR:
+                print("Gate 3")
+                rows, b, m = coolant_geometry.add_rows(rows, b, b_orig, m, m_orig, a, AR)
+                a, b = coolant_geometry.adjust_AR(a, b, AR)
+
+            if AR < 1 and a > b and a / b > AR:
+                print("Gate 4")
+                a, b = coolant_geometry.adjust_AR(a, b, AR)
+
+            if AR < 1 and a < b and a / b > AR:
+                print("Gate 5")
+                a, b = coolant_geometry.adjust_AR(a, b, AR)
+
+            if AR < 1 and a < b and a / b < AR:
+                print("Gate 6")
+                rows, b, m = coolant_geometry.add_rows(rows, b, b_orig, m, m_orig, a, AR)
+                a, b = coolant_geometry.adjust_AR(a, b, AR)
+
+            if AR == 1 and a > b:
+                print("Gate 7")
+                a, b = coolant_geometry.adjust_AR(a, b, AR)
+
+            if AR == 1 and a < b:
+                print("Gate 8")
+                rows, b, m = coolant_geometry.add_rows(rows, b, b_orig, m, m_orig, a, AR)
+                a, b = coolant_geometry.adjust_AR(a, b, AR)
+
+            Error = a / b
+            if sqrt((AR - Error) ** 2.0) < 1E-5:
+                break
+
+            else:
+                print("SOMETHING HAS GONE TERRIBLY WRONG")
+                break
+
+        m_act, theta = coolant_geometry.coordinates("toroidal", m, rows, d, a, sectionCoord, m_min, b)
+
+        return A1, A2, deltaz, dh, input_power, phi, a, b, FC_input, rows, hmin, m_row, m, thetap
+
+    def add_rows(rows, b, b_orig, m, m_orig, a, AR):
+        while a / b < AR:
+            rows += 1
+            b = b_orig * (1 / rows)
+            m += m_orig  # total number of pipes
+        return rows, b, m
+
+    def adjust_AR(a, b, AR):
+        A1 = a * b
+        b = sqrt(A1 / AR)
+        a = AR * b
+        return a, b
+
+    def coordinates(orientation, m, rows, d, a, sectionCoord, m_min, b):
+        FC_input = []
+
+        if orientation == "poloidal":
+            return
+        else:
+            z = 0
+            m_row = m / rows
+            m_act = (d - ((m_row) * a)) / (m_row + 1)
+            theta = atan((sectionCoord[0][1] - sectionCoord[1][1]) / (sectionCoord[0][0] - sectionCoord[1][0]))
+            x1 = sectionCoord[0][0] + m_act * cos(theta) + m_min * cos(theta - pi / 2)
+            y1 = sectionCoord[0][1] + m_act * sin(theta) - m_min * cos(theta - pi / 2)
+            x2 = x1 + b * cos(pi / 2 - theta)
+            y2 = y1 - b * sin(pi / 2 - theta)
+            x3 = x1 + a * cos(theta)
+            y3 = y1 + a * sin(theta)
+            x4 = x2 + a * cos(theta)
+            y4 = y2 + a * sin(theta)
+            guide_wire = [[sectionCoord[0][0], sectionCoord[0][1], 0], [sectionCoord[1][0], sectionCoord[1][1], 0]]
+
+        FC_input.append([x1, y1, z])
+        FC_input.append([x2, y2, z])
+        FC_input.append([x4, y4, z])
+        FC_input.append([x3, y3, z])
+        FC_input.append([x1, y1, z])
+
+        for i in FC_input:
+            for j, y in enumerate(i):
+                i[j] = y * 1000
+
+        f = open("Example_divertor_complex//coolant_geometry.asc", "w")
+
+        for line in FC_input:
+            for i in line:
+                f.write(str(i) + "\t")
+            f.write("\n")
+
+        f.close()
+
+        f = open("Example_divertor_complex//coolant_guide.asc", "w")
+
+        for line in guide_wire:
+            for i in line:
+                f.write(str(i) + "\t")
+            f.write("\n")
+
+        f.close()
+
+        return m_act, theta

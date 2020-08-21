@@ -29,7 +29,7 @@ class Setup:
         Ma = []
         # dimension terms
         A1, A2, deltaz, dh, input_power, phi, a, b, FC_input, rows, hmin, \
-            m_row, m, thetap = coolant_geometry.discrete_pipes_poloidal_flow(\
+            m_row, m, thetap = coolant_geometry.toroidal_flow(\
             MassFlow, input_rho, VelInput, section_0, section_1, input_power, \
             h, n, m, channel_type, m_min, AR)
         # input definitions
