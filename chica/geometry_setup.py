@@ -1,11 +1,10 @@
 
-from chica.coolant_geometry import toroidal_flow
+from chica.coolant_geometry import toroidal_flow, poloidal_flow, Qdot_toroidal_flow
 from chica.non_dimensional import nusselt, film_coeff
 
-
 def initial_setup(section_0, input_temperature, input_pressure, VelInput, \
-                 input_power, h, MassFlow, input_rho, \
-                 epsi, section_1, n, m, channel_type, m_min, AR):
+                 input_power, MassFlow, input_rho, \
+                 epsi, section_1, n, m, channel_type, m_min, AR, orientation, working_fluid):
     # Lists of data in files and initial parameters:
     htc_0 = [] # Film transfer coefficient in W/m2/K
     h_f = [] # Friction coefficient
@@ -22,10 +21,22 @@ def initial_setup(section_0, input_temperature, input_pressure, VelInput, \
     Nu = []
     Ma = []
     # dimension terms
-    A1, A2, deltaz, dh, input_power, phi, a, b, FC_input, rows, hmin, \
-        m_row, m, thetap = toroidal_flow(\
-        MassFlow, input_rho, VelInput, section_0, section_1, input_power, \
-        h, n, m, channel_type, m_min, AR)
+    
+    if orientation == "poloidal":
+        A1, A2, deltaz, dh, input_power, phi, a, b, FC_input, rows, hmin, \
+            m_row, m, thetap = poloidal_flow(\
+            MassFlow, input_rho, VelInput, section_0, section_1, input_power, \
+            n, m, channel_type, m_min, AR)
+    
+    elif orientation == "toroidal":
+        A1, A2, deltaz, dh, input_power, phi, a, b, FC_input, rows, hmin, \
+            m_row, m, thetap = toroidal_flow(\
+            MassFlow, input_rho, VelInput, section_0, section_1, input_power, \
+            n, m, channel_type, m_min, AR)
+    
+    else:
+        print("something has gone wrong in geomtry_setup.py")
+    
     # input definitions
     # non-dimensional terms at node point, don't use v_s from this calc, just shows that v_secc[0] = y
     nu, re, pr, h_1, v_s = nusselt(MassFlow/(n*m), T_ref[0], A1, input_pressure, \

@@ -2,48 +2,10 @@
 # area of the gap Ag [m**2]
 # thickness of the gap tg [m]
 
-from math import *
-import numpy
+from math import sin, cos, tan, asin, atan, sqrt, pi
+from numpy import array
 
-
-def annulus_poloidal_flow(MassFlow, input_rho, y, section_0, section_1, input_power, h):
-
-    # dimension terms
-    deltaz = []
-    Ag = [] # tangential area of the gap
-    Alist = [] # parallel area of the gap
-
-    for i in range(len(section_1)-1):
-        A = pi * (section_0[i] + section_0[i+1]) * sqrt(((section_1[i]-section_1[i+1])**2) \
-            + ((section_0[i]-section_0[i+1])**2)) # for a frustum
-        # A = 2 * pi() * section_0[i] * (section_1[i+1] - section_1[i]) # for a cylinder
-        Alist.append(A)
-        input_power[i] = input_power[i] * A * \
-            (section_0[i+1]/(section_0[i+1] + h)) # scaling for copper thickness
-
-    # thickness of gap
-    step1 = ((MassFlow)/(input_rho*y*pi)) + (section_0[0]**2)
-    a = 2 * section_0[0]
-    tg = (-a + sqrt((a**2)-(4*((section_0[0]**2)-step1)))) / 2
-
-    # tg = 0.01 # tg fixed
-
-    # deltaz needs to be calculated for each section
-    for i in range( len(section_1)-1):
-        deltaz.append(sqrt((section_1[i+1] - section_1[i])**2 + (section_0[i+1] - section_0[i])**2)) #Length in [m], lenght of pipe section being considered
-
-    # compute for each node past the first node
-    for i, x in enumerate(section_1):
-        Ag.append(pi*((section_0[i] + tg)**2) - pi*(section_0[i]**2))
-
-    # hydraulic diameter
-    dh = 2 * tg # for annular cylinder
-    # dh = diameter of the tubes for perfectly circular tubes
-
-    return Ag, tg, dh, deltaz, Alist, input_power
-
-
-def poloidal_flow(MassFlow, input_rho, VelInput, section_0, section_1, input_power, h, n, m, channel_type, m_min, AR):
+def poloidal_flow(MassFlow, input_rho, VelInput, section_0, section_1, input_power, n, m, channel_type, m_min, AR):
 
     deltaz = sqrt((section_1[1] - section_1[0])**2 + (section_0[1] - section_0[0])**2) #Length in [m], lenght of pipe section being considered
     FC_input = []
@@ -215,7 +177,7 @@ def Qdot_toroidal_flow(SxW, SyH, m, section_0, section_1, AR, rows, MassFlow, in
     a = Sx / SxW
     b = a * (1 / AR)
 
-    sectionCoord = numpy.array([[section_0[0], section_1[0]], [section_0[-1], section_1[-1]]])
+    sectionCoord = array([[section_0[0], section_1[0]], [section_0[-1], section_1[-1]]])
 
     coordinates("toroidal", m, rows, d, a, sectionCoord, m_min, b)
 
@@ -233,11 +195,11 @@ def Qdot_toroidal_flow(SxW, SyH, m, section_0, section_1, AR, rows, MassFlow, in
     return
 
 
-def toroidal_flow(MassFlow, input_rho, VelInput, section_0, section_1, input_power, h, n, m, channel_type, m_min,
+def toroidal_flow(MassFlow, input_rho, VelInput, section_0, section_1, input_power, n, m, channel_type, m_min,
                   AR):
 
     A0 = MassFlow / (input_rho * VelInput)
-    sectionCoord = numpy.array([[section_0[0], section_1[0]], [section_0[-1], section_1[-1]]])
+    sectionCoord = array([[section_0[0], section_1[0]], [section_0[-1], section_1[-1]]])
     d = sqrt((section_1[-1] - section_1[0]) ** 2 + (section_0[-1] - section_0[0]) ** 2)
     a = (d - (m_min * (m + 1))) / m
     b = A0 / (a * m)
@@ -292,8 +254,23 @@ def toroidal_flow(MassFlow, input_rho, VelInput, section_0, section_1, input_pow
             print("SOMETHING HAS GONE TERRIBLY WRONG")
             break
 
-    m_act, theta = coordinates("toroidal", m, rows, d, a, sectionCoord, m_min, b)
-
+    m_act, theta, FC_input = coordinates("toroidal", m, rows, d, a, sectionCoord, m_min, b)
+    
+    A1 = a * b
+    A2 = a * d
+    dh = 2 * a * b / (a + b)
+    hmin = None
+    phi = None
+    m_row = m/rows
+    thetap = None
+    deltaz = None
+    
+    # scale power input
+    for i in range(len(input_power)):
+        P0 = A2 * input_power[i]  # assigns power in [W]
+        input_power[i] = P0  # updates power input list
+    
+    
     return A1, A2, deltaz, dh, input_power, phi, a, b, FC_input, rows, hmin, m_row, m, thetap
 
 
@@ -317,7 +294,7 @@ def coordinates(orientation, m, rows, d, a, sectionCoord, m_min, b):
 
     if orientation == "poloidal":
         return
-    else:
+    if orientation == "toroidal":
         z = 0
         m_row = m / rows
         m_act = (d - ((m_row) * a)) / (m_row + 1)
@@ -360,4 +337,4 @@ def coordinates(orientation, m, rows, d, a, sectionCoord, m_min, b):
 
     f.close()
 
-    return m_act, theta
+    return m_act, theta, FC_input
