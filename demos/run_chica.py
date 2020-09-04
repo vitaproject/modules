@@ -27,18 +27,16 @@ epsi = 0.00000015  # Surface Roughness, m
 input_pressure = 8E6  # input pressure, Pa
 input_temperature = 373.15  # input temperature, K
 # Channel geometry
-channel_type = "rectangle"
-# channel_type = "circle" 
-# orientation = "poloidal"
-orientation = "toroidal"
-working_fluid = "Helium" # gas being inspected
+# channel_type = "rectangle"
+channel_type = "circle" 
+orientation = "poloidal"
+# orientation = "toroidal"
 m_min = 1E-4  # Minimum material between channels, m
 AR = 1  # Aspect ratio, width / depth
 
-
 ################################
 # Initial calculated parameters
-input_rho = SI('D', 'P', input_pressure, 'T', input_temperature, working_fluid)  # kg/m3
+input_rho = SI('D', 'P', input_pressure, 'T', input_temperature, "helium")  # kg/m3
 
 pressure_output = []
 htc_0_output = []
@@ -86,10 +84,10 @@ for massflow in q_r:
             velocityinput)  # add first velocity term to input, needs to be in loop as changes with loop
 
         htc_0, Re, Pr, Nu, h_f, dh, v_secc, T_ref, T_metal, P_secc, hf_tot, \
-        deltaz, input_power, Ma, A1, A2, phi, a, b, FC_input, rows, hmin, m_row, m, thetap = \
+        deltaz, input_power, Ma, A1, A2, phi, a, b, rows, hmin, m_row, m, thetap = \
             initial_setup(section_0, input_temperature, input_pressure, \
                           velocityinput, input_power, massflow, input_rho, epsi, section_1, \
-                          n_input, m_input, channel_type, m_min, AR, orientation, working_fluid)
+                          n_input, m_input, channel_type, m_min, AR, orientation)
 
         # -------------------------------Start of first procedure------------------------------- #
 
@@ -131,10 +129,3 @@ for massflow in q_r:
         # print(count_global)
     # if count_global == 30000:
     #     break
-
-# f = open("coolant_geometry.txt", "w")
-
-# for line in FC_input:
-#     f.write(line + "\n")
-
-# f.close()
