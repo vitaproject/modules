@@ -11,7 +11,7 @@ from chica.geometry_setup import initial_setup
 
 #################################
 # Input definitions:
-isection_path = get_example_data_path("divertor_complex/Divertor_lower_LFS_sink.asc")
+isection_path = get_example_data_path("Concept_2A/Divertor_lower_LFS_sink.asc")
 
 # Sensitivity study parameters:
 q_r = numpy.linspace(5, 50, 1)  # Mass flow rate, kg/s
@@ -27,10 +27,10 @@ epsi = 0.00000015  # Surface Roughness, m
 input_pressure = 8E6  # input pressure, Pa
 input_temperature = 373.15  # input temperature, K
 # Channel geometry
-# channel_type = "rectangle"
-channel_type = "circle" 
-orientation = "poloidal"
-# orientation = "toroidal"
+channel_type = "rectangle"
+# channel_type = "circle" 
+# orientation = "poloidal"
+orientation = "toroidal"
 m_min = 1E-4  # Minimum material between channels, m
 AR = 1  # Aspect ratio, width / depth
 

@@ -4,7 +4,7 @@ from os import path
 
 def get_example_data_path(relative_data_path):
 
-    data_path = path.join(path.dirname(__file__), 'example_data')
+    data_path = path.join(path.dirname(__file__), 'divertor_volume')
     data_path = path.join(data_path, relative_data_path)
 
     if not path.isfile(data_path):

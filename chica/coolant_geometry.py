@@ -35,7 +35,7 @@ def poloidal_flow_rectangle(MassFlow, input_rho, VelInput, section_0, section_1,
     freeCAD_input_angle = freeCAD_angle_back_calc(a, m, R, thetap, thetat)
     FC_input, guide_wire = coordinates("poloidal", m, rows, None, a, sectionCoord, m_min, b, R, theta)
     A1, A2, dh, m_row = pipe_geometry(a, b, d, m, rows)
-    write_files(FC_input, guide_wire)
+    write_files(FC_input, guide_wire, rows, m)
     input_power = scale_power(input_power, A2)
     
     return A1, A2, dh, input_power, a, b, rows, m_row, m, freeCAD_input_angle
@@ -62,7 +62,7 @@ def toroidal_flow_rectangle(MassFlow, input_rho, VelInput, section_0, section_1,
     a, b, rows, m = AR_check(a, b, m, b_orig, m_orig, rows, AR)
     FC_input, guide_wire = coordinates("toroidal", m, rows, d, a, sectionCoord, m_min, b, None, None)
     A1, A2, dh, m_row = pipe_geometry(a, b, d, m, rows)
-    write_files(FC_input, guide_wire)
+    write_files(FC_input, guide_wire, rows, m)
     input_power = scale_power(input_power, A2)
     
     return A1, A2, dh, input_power, a, b, rows, m_row, m
@@ -145,7 +145,7 @@ def coordinates(orientation, m, rows, d, a, sectionCoord, m_min, b, R, theta):
     
     return FC_input, guide_wire
 
-def write_files(FC_input, guide_wire):
+def write_files(FC_input, guide_wire, rows, m):
     
     """
     Assigns pipe profile geometry points to freeCAD input file
@@ -183,14 +183,11 @@ def write_files(FC_input, guide_wire):
 
     f.close()
     
-    # f = open("important_info.asc", "w")
+    f = open("important_info.asc", "w")
 
-    # for line in guide_wire:
-    #     for i in line:
-    #         f.write(str(i) + "\t")
-    #     f.write("\n")
+    f.write(str(m/rows) + "\n" + str(rows))
 
-    # f.close()
+    f.close()
 
 def AR_check(a, b, m, b_orig, m_orig, rows, AR):
     
