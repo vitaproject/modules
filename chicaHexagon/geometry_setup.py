@@ -1,8 +1,9 @@
 ## hexagon centre point map, uses a symmetry line at the origin
 
-from math import sin, cos, tan, pi
+from math import sin, cos, tan, atan, pi, ceil
 from matplotlib.pyplot import scatter
 from sympy import symbols
+from string import ascii_lowercase
 
 # ------------------------------- initial geometry calcs ------------------------------- #
 
@@ -64,7 +65,7 @@ def refined_domain_space(line_angle, cp, point_x1, point_y1, cp_remove, \
                          (k, y_displacement_from_origin),(y, z[1])]) <= z[0]:
                 cp_remove.append(z)
     
-    ## remove values from the total list and creates a new "final" list
+                                                                               ## remove values from the total list and creates a new "final" list
     for i in cp:
         if i not in cp_remove: 
             hcp_final.append(i)
@@ -158,3 +159,26 @@ def write_CAD_input_files(height, width, hcp_ID, hexagon, hcp_final, tcp_final, 
     f.write(geometry)
     
     f.close()
+    
+# def flow_channel_assignment(n, theta, hcp_final):                                         ## flow channel and radial position assignment for every hexagon centre point
+    
+#     n = ceil(n/2)                                                                    ## n = number of channels to consider
+#     channel_ID = [i for i in ascii_lowercase[:n]] ## creates a list of channel IDs 
+#     channels = [[] for i in range(n)]
+#     thetaN = [atan(i[1]/i[0]) for i in hcp_final]
+    
+#     for i in hcp_final:
+#         for j, theta in enumerate(thetaN):
+#             if i >= theta and i <= thetaN[j+1]:
+#                 channels[j].append(i)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
