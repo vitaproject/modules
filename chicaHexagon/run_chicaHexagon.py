@@ -2,7 +2,8 @@
 from chicaHexagon.geometry_setup import initial_domain_space, \
                                            refined_domain_space, \
                                            plot_centre_points, \
-                                           write_CAD_input_files
+                                           write_CAD_input_files, \
+                                           flow_channel_assignment
 from chicaHexagon.utility import get_example_data_path
 import time
 
@@ -11,7 +12,7 @@ import time
 values = []
 cp = [] ## a list for assigning centre points of hexagon array, (x, y)
 cp_remove = [] ## list of values to remove from cp as are out of bounds
-cp_mirror = []
+hcp_mirror = []
 hcp_final = [] ## list of remaining central points
 hcp_x = [] ## a list of x values for plotting
 hcp_y = [] ## a list of y values for plotting
@@ -32,7 +33,7 @@ with open(input_data) as inputs:
         values.append(float(words[len(words)-1:][0]))
 
 n, width, inner_radius, outer_radius, x_displacement_from_origin, \
-    y_displacement_from_origin, gap = values
+    y_displacement_from_origin, gap, number_of_channels, R = values
 
 height, theta, point_x1, point_y1, line_angle, no_points, cp = \
     initial_domain_space(width, n, gap, inner_radius, outer_radius, cp)
@@ -44,6 +45,8 @@ hcp_final, tcp_final = refined_domain_space(line_angle, cp, point_x1, \
 plot_centre_points(hcp_final, tcp_final)
     
 write_CAD_input_files(height, width, hcp_ID, hexagon, hcp_final, tcp_final, \
-                          cp_mirror)
+                          hcp_mirror)
 
+flow_channel_assignment(number_of_channels, theta, hcp_final, R, inner_radius, outer_radius)
+    
 print("--- %s seconds ---" % (time.time() - start_time))
