@@ -1,12 +1,12 @@
-## hexagon centre point map, uses a symmetry line at the origin
 
 from math import sin, cos, tan, atan, pi, ceil, sqrt
 from numpy import linspace
-from matplotlib.pyplot import scatter
 from sympy import symbols
-# from string import ascii_lowercase
+from tqdm import tqdm
+from operator import itemgetter
+from copy import deepcopy
 
-def initial_domain_space(width, n, gap, inner_radius, outer_radius, cp):
+def initial_domain_space(width, n, gap, inner_radius, outer_radius):
     
     """
     Defining the initial point map of tesselated hexagon centre points 
@@ -26,26 +26,33 @@ def initial_domain_space(width, n, gap, inner_radius, outer_radius, cp):
         point map of hexagon centre points
         
     :param list cp: Hexagon centre points map
-    :rtype float:
     """
-    
+
+    cp = [] ## a list for assigning centre points of hexagon array, (x, y)
     height = width/2 * tan(60*pi/180)
     theta = (360/n/2 - gap) * pi/180
     point_x1 = inner_radius*cos(theta)
     point_y1 = inner_radius*sin(theta)
     line_angle = tan(theta)
-    no_points = int(round((outer_radius/min(width, height)), 0))
-
-    for i in range(no_points):
-        for j in range(no_points):
-            cp.append([i*1.5*width, j*height])
-            cp.append([i*1.5*width + 0.75*width, j*height + 0.5*height])
     
-    return height, theta, point_x1, point_y1, line_angle, no_points, cp
+    topy = outer_radius * sin(theta)
+    no_points_y = int(round((topy/height), 0))
+    no_points_x = int(round(((outer_radius-point_x1)/(1.5*width)), 0))
+    
+    a = width/2
+    A = (3 * sqrt(3) / 2) * a ** 2
 
-def refined_domain_space(angle, cp, x1, y1, cp_remove, width, inner_radius, \
-                         outer_radius, tcp_final, hcp_final, \
-                         x_displacement_from_origin, y_displacement_from_origin):
+    for i in range(no_points_x):
+        for j in range(no_points_y):
+            cp.append([i*1.5*width + point_x1, j*height])
+            cp.append([i*1.5*width + 0.75*width + point_x1, j*height + 0.5*height])
+    
+    return height, theta, point_x1, point_y1, line_angle, no_points_x, \
+        cp, A
+
+def refined_domain_space(angle, cp, x1, y1, width, inner_radius, \
+                         outer_radius, x_displacement_from_origin, \
+                         y_displacement_from_origin, Rstrike):
 
     """
     Refining the initial point map of tesselated hexagon centre points by \
@@ -66,14 +73,17 @@ def refined_domain_space(angle, cp, x1, y1, cp_remove, width, inner_radius, \
         centre point
     :param list tcp_final: Coordinates of the regular triangles that \
         constitute the tesselated hexagon array
-    :rtype float:
     """
 
+    cp_remove = [] ## list of values to remove from cp as are out of bounds
+    hcp_final = [] ## list of remaining central points
+    tcp_final = []
+    
     x, y, r = symbols("x y r")
     topy = (angle * (x-x1)) + y1
     arc = ((r**2 - ((y-y_displacement_from_origin)**2))**0.5) + \
         x_displacement_from_origin
-
+    
     for i, coordinates in enumerate(cp):
         
         if topy.subs([(x, coordinates[0])]) <= coordinates[1]: 
@@ -100,9 +110,9 @@ def refined_domain_space(angle, cp, x1, y1, cp_remove, width, inner_radius, \
     for i in cp:
         if i not in cp_remove: 
             hcp_final.append(i)
-
+    
     # ------------------------------- create centre points for triangles ------------------------------- #
-            
+    
     R = (width / 4) / cos(pi/6)
     for i in hcp_final:
         for j in range(7):
@@ -110,121 +120,12 @@ def refined_domain_space(angle, cp, x1, y1, cp_remove, width, inner_radius, \
                               0, \
                               (i[1] + R*sin(j * pi/3 + pi/6))*1000])
     
+    for i, value in enumerate(hcp_final):
+        hcp_final[i].append(sqrt(value[0]**2 + value[1]**2)-Rstrike)
+    
     return hcp_final, tcp_final
-
-# ------------------------------- plot triangle and hexagon centre points ------------------------------- #
-
-def plot_centre_points(hcp_final, tcp_final):
     
-    """
-    Plot of hexagon and triangle centre point arrays for error checking
-
-    :param list hcp_x: x coordinates of hexagon array
-    :param list hcp_y: y coordinates of hexagon array
-    :param list tcp_x: x coordinates of triangle array
-    :param list tcp_y: y coordinates of triangle array
-    :rtype float:
-    """
-    
-    hcp_x = hcp_y = tcp_x = tcp_y = []
-    
-    for i in hcp_final:
-        hcp_x.append(i[0])
-        hcp_y.append(i[1])
-    
-    for i in tcp_final:
-        tcp_x.append(i[0])
-        tcp_y.append(i[1])
-    
-    #scatter(hcp_x, hcp_y, s = 1, c = "magenta")
-    scatter(tcp_x, tcp_y, s = 1)
-
-# ------------------------------- create vertex coordinates for first hexagon ------------------------------- #
-
-def write_CAD_input_files(height, width, hcp_ID, hexagon, hcp_final, tcp_final, \
-                          hcp_mirror):
-
-    """
-    Writes the relevant output files for importing in to FreeCAD
-
-    :param float width: Width "vertex to vertex" of a single hexagon
-    :param float height: Height "flat to flat" of a single hexagon
-    
-    :param list hexagon: Vertex coorindates of the first hexagon
-    :param list hcp_final: Refined list of coordinates for every hexagon \
-        centre point
-    :param list hcp_mirror: Mirrors coordinates of hcp_final about the line \
-        x = 0, ensuring not to repeat coordinates on the line x = 0
-    :param list tcp_final: Coordinates of the regular triangles that \
-        constitute the tesselated hexagon array
-        
-    :param file hexagon.asc: Height and width of a single hexagon
-    :param file triangle.asc: Coordinates if tesselated triangle centre points 
-    :param file IDs.asc: Height and width multipliers for every hexagon centre point \
-        defining the position of each hexagon reletive to the centre point of \
-            the hexagon defined in singleHexagon.asc
-    :param file singleHexagon.asc: Vertex coordinates of the first hexagon
-    :rtype float:
-    """
-    
-    R = (height/2) / sin(pi/3)
-    for j in range(7):
-            hexagon.append([(hcp_final[0][0] + R*cos(j * pi/3))*1000, \
-                            0, \
-                            (hcp_final[0][1] + R*sin(j * pi/3))*1000])
-    
-    # ------------------------------- create ID list for centre points ------------------------------- #
-    
-    ## assign ID's to centre points
-    for i in hcp_final:
-        hcp_ID.append([i[0]/width - hcp_final[0][0]/width,0, i[1]/height])
-    
-    for i in hcp_ID:
-        if i[2] == 0:
-            None
-        else:
-            hcp_mirror.append([i[0], 0, -i[2]])
-    
-    for i in hcp_mirror:
-        hcp_ID.append(i)
-    
-    # ------------------------------- write files for FreeCAD ------------------------------- #
-       
-    f = open("results/hexagon.asc", "w")
-    
-    for line in hexagon:
-        for i in line:
-            f.write(str(i) + "\t")
-        f.write("\n")
-    
-    f.close()
-    
-    f = open("results/triangle.asc", "w")
-    
-    for line in tcp_final:
-        for i in line:
-            f.write(str(i) + "\t")
-        f.write("\n")
-    
-    f.close()
-    
-    f = open("results/IDs.asc", "w")
-    
-    for line in hcp_ID:
-        for i in line:
-            f.write(str(i) + "\t")
-        f.write("\n")
-    
-    f.close()
-    
-    f = open("results/singleHexagon.asc", "w")
-    
-    geometry = str(width) + " " + str(height)
-    f.write(geometry)
-    
-    f.close()
-    
-def flow_channel_assignment(number_of_channels, theta, hcp_final, R, inner_radius, outer_radius):             ## flow channel and radial position assignment for every hexagon centre point
+def radial_flow_channel_assignment(number_of_channels, theta, hcp_final, R, inner_radius, outer_radius):             ## flow channel and radial position assignment for every hexagon centre point
     
     """
     Splits the hexagon centre point list into "channels"", defined as the flow \
@@ -254,10 +155,6 @@ def flow_channel_assignment(number_of_channels, theta, hcp_final, R, inner_radiu
         centre point channel alocation
     :param list channels: List of lists containing hexagon centre point \ 
         coordinates determined to be within each channel
-    
-    :param file channels.asc: Coordinates
-        
-    :rtype float:
     """
     
     if R <= inner_radius or R >= outer_radius:
@@ -300,17 +197,103 @@ def flow_channel_assignment(number_of_channels, theta, hcp_final, R, inner_radiu
         for j in x:
             j.append(sqrt((R-sqrt(j[0]**2+j[1]**2))**2))
         channels[i] = sorted(x, key = lambda x:x[2], reverse=False)
-          
-    f = open("results/channels.asc", "w")
     
-    for line in channels:
-        for i in line:
-            for j in i:
-                f.write(str(j) + "\t")
-            f.write("\n")
-        f.write("\n")
+    return channels
     
-    f.write(str(thetaN) + "\n")
+def reorder(channels, R, RN):
     
-    f.close()
+    """
+    Need to reorder the channels list to account for a strike point between \
+        Rmin and Rmax
     
+    :param float R: Radius of the injection point of the coolant into the panel
+    
+    :param list RN: Radial bounds to determine hexagon centre point channel \
+        alocation
+    :param list channels: List of lists containing hexagon centre point \ 
+        coordinates determined to be within each channel
+    :param channels_with_direction: Adds the channels to "direction" \
+        designations. i.e. for a given R, the flow will iterate in 2 \
+            directions, hence this distinction is required for calculating \
+                flow properties in each direction
+    """
+    
+    for i, Ri in enumerate(RN):
+        if R >= Ri and R <= RN[i+1]:
+            first_channel = i
+    
+    channels_with_direction = []
+    
+    channels_with_direction.insert(0, list(reversed(channels[:first_channel+1])))
+    channels_with_direction.insert(1, channels[first_channel-1:])
+    
+    return channels_with_direction
+
+def first_row(hcp_final, number_of_hexagons):
+    
+    """
+    Divides the hexagon list about the strike point radius into inboard and \
+        outboard categories. Then adds hexagons to the first row. The \
+            inboard/outboard assigned hexagons will be used to populate the \
+                remaining rows as they are created.
+
+    :param float number_of_hexagons: Number of hexagons to be added to the \
+        first row
+    
+    :param list hcp_inboard: Hexagon centre points inboard of strike point
+    :param list hcp_outboard: Hexagon centre points outboard of strike point
+    :param list hcp_first_row: Hexagon centre points in first row
+    :param list channels: list containing lists of hexagon centre points \
+        separated by row designation
+    """
+
+    
+    hcp_inboard = []
+    hcp_outboard = []
+    
+    for i in hcp_final:
+        if i[2] >= 0:
+            hcp_outboard.append(i)
+        else:
+            hcp_inboard.append(i)
+    
+    hcp_inboard = sorted(hcp_inboard, key=itemgetter(2), reverse = True)
+    hcp_outboard = sorted(hcp_outboard, key=itemgetter(2))
+    hcp_first_row = []
+    
+    for coordinates in hcp_inboard[:int(number_of_hexagons/2)]:
+        hcp_first_row.append(coordinates)
+    for coordinates in hcp_outboard[:int(number_of_hexagons/2)]:
+        hcp_first_row.append(coordinates)
+    
+    channels = [[],[]] # two sets of lists of lists, indicating channels going inboard/outboard
+    
+    for direction in channels:
+        direction.insert(0, deepcopy(hcp_first_row))
+    
+    return channels, hcp_inboard, hcp_outboard
+
+def next_rows(hcp, n, ni):
+    
+    """
+    Adds hexagons to the next row.
+    
+    :param float n: Number of hexagons to be added to the already assigned to \
+        a row
+    :param float ni: n + the number of hexagons to be added to the current row
+    
+    :param list hcp_next_row: Hexagon centre points outboard of strike point
+    :param list hcp: Hexagon centre points separated by inboard/outboard \
+        assignment
+    """
+
+    hcp_next_row = []
+    
+    for coordinates in hcp[n:ni]:
+        hcp_next_row.append(deepcopy(coordinates))
+    
+    return hcp_next_row
+
+
+
+
