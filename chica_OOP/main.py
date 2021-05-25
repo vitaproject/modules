@@ -115,7 +115,6 @@ class Channel:
     def create_first_channel(cls, input_pressure, input_temperature, panel_hexagons, \
                  HFf, cross_sectional_area, number_of_hexagons, Ma=0.0):
 
-
         obj = cls(input_pressure, input_temperature, panel_hexagons, \
                          HFf, cross_sectional_area, Ma)
 
@@ -142,7 +141,7 @@ class Channel:
         return obj
         
     @classmethod
-    def create_channel(cls, panel_hexagons, HFf, cross_sectional_area, \
+    def create_optimised_channel(cls, panel_hexagons, HFf, cross_sectional_area, \
                      remaining_hexagons, previous_channel, mass_flow_actual, Ma=0.0):
 
         obj = cls(previous_channel.output_pressure, previous_channel.output_temperature, panel_hexagons, \
@@ -186,6 +185,48 @@ class Channel:
         obj.max_temperature = previous_channel.max_temperature
         
         return obj
+    
+    @classmethod
+    def create_structured_channel(cls, panel_hexagons, HFf, cross_sectional_area, \
+                     remaining_hexagons, previous_channel, mass_flow_actual, Ma=0.0):
+
+        obj = cls(previous_channel.output_pressure, previous_channel.output_temperature, panel_hexagons, \
+                         HFf, cross_sectional_area)
+
+        obj.mass_flow = previous_channel.mass_flow
+        obj.max_temperature_from_previous_channel = previous_channel.max_temperature
+        number_of_hexagons_required = len(previous_channel.hexagons)
+        
+        if obj.mass_flow == 0.0:
+            number_of_hexagons_required = len(remaining_hexagons)
+            obj.mass_flow = mass_flow_actual / number_of_hexagons_required
+
+        elif number_of_hexagons_required <= len(remaining_hexagons):
+            number_of_hexagons_required = int(number_of_hexagons_required)
+            obj.mass_flow = mass_flow_actual / number_of_hexagons_required
+
+        else:
+            number_of_hexagons_required = len(remaining_hexagons)
+            obj.mass_flow = mass_flow_actual / number_of_hexagons_required
+
+        obj.mass_flow, obj.jet_velocity, obj.jet_cross_sectional_area, \
+        obj.fluid_properties.density, obj.jet_diameter = mass_flow_sympy(obj.input_temperature, \
+                                                                           obj.input_pressure, massflow=obj.mass_flow)
+
+        obj.mach_number, obj.jet_velocity = mach_number_sympy(obj.input_temperature, \
+                                                                u=obj.jet_velocity)
+
+        obj.repeated_operations()
+        
+        obj.get_hexagons(remaining_hexagons[:number_of_hexagons_required])
+        del remaining_hexagons[:number_of_hexagons_required]
+
+        obj.output_temperature = sum([hexagon.developed_coolant_temperature for hexagon in obj.hexagons]) \
+                                  / number_of_hexagons_required
+        obj.output_pressure = obj.input_pressure - obj.pressure_drop
+        obj.max_temperature = max([hexagon.metal_temperature for hexagon in obj.hexagons])
+        
+        return obj
 
 class Panel:
     
@@ -203,15 +244,16 @@ class Panel:
     def configure(self):
         self.populate_hexagons()
         self.add_first_channel()
-        self.add_subsequent_channels(self.channels[0])
-
+        # self.add_optimised_channels(self.channels[0])
+        self.add_structured_channels(self.channels[0])
+    
     def add_first_channel(self):
         
         self.channels.append(Channel.create_first_channel(self.input_data["input_pressure"], 
             self.input_data["input_temperature"], self.panel_hexagons, self.HFf, self.cross_sectional_area, \
             self.number_of_hexagons_in_first_channel, Ma = self.mach_number))
         
-    def add_subsequent_channels(self, first_channel):
+    def add_optimised_channels(self, first_channel):
 
         new_channels = [[], []]
         
@@ -229,12 +271,12 @@ class Panel:
             
             mass_flow_actual = self.mass_flow_actual[index]
             
-            new_channels[index].append(Channel.create_channel(self.panel_hexagons, \
+            new_channels[index].append(Channel.create_optimised_channel(self.panel_hexagons, \
                     self.HFf, self.cross_sectional_area, direction, first_channel, \
                     mass_flow_actual))
             
             while len(direction) >= 1.0:
-                new_channels[index].append(Channel.create_channel(self.panel_hexagons, \
+                new_channels[index].append(Channel.create_optimised_channel(self.panel_hexagons, \
                     self.HFf, self.cross_sectional_area, direction, new_channels[index][-1], \
                     mass_flow_actual))
         
@@ -244,7 +286,40 @@ class Panel:
         
         for channel in new_channels[1]:
             self.channels.append(channel)
+    
+    def add_structured_channels(self, first_channel):
         
+        new_channels = [[], []]
+        
+        reordered_hexagons = sorted(self.panel_hexagons, key = lambda x:x[3], reverse = False)
+        inboard_hexagons, outboard_hexagons = [hexagons for hexagons in reordered_hexagons if hexagons[-1] <= 0.0], \
+            [hexagons for hexagons in reordered_hexagons if hexagons[-1] >= 0.0]
+        all_remaining_hexagons = [inboard_hexagons, outboard_hexagons]
+    
+        self.mass_flow_total = first_channel.mass_flow_total
+        
+        self.mass_flow_actual = [self.mass_flow_total * (1-self.mass_flow_split), self.mass_flow_total * \
+            self.mass_flow_split]
+        
+        for index, direction in enumerate(all_remaining_hexagons):
+            
+            mass_flow_actual = self.mass_flow_actual[index]
+            
+            new_channels[index].append(Channel.create_structured_channel(self.panel_hexagons, \
+                    self.HFf, self.cross_sectional_area, direction, first_channel, \
+                    mass_flow_actual))
+            
+            while len(direction) >= 1.0:
+                new_channels[index].append(Channel.create_structured_channel(self.panel_hexagons, \
+                    self.HFf, self.cross_sectional_area, direction, new_channels[index][-1], \
+                    mass_flow_actual))
+        
+        for channel in new_channels[0]:
+            self.channels.insert(0, channel)
+        
+        for channel in new_channels[1]:
+            self.channels.append(channel)
+    
     def read_inputs(self, inputs_filename, q_filename):
         # read asc files and store results to member variables (self...)
         
@@ -274,7 +349,8 @@ class Panel:
         
         sbar.insert(0, self.input_data["strike_radius"] - (sbar[1] - sbar[0]))
         sbar.insert(0, 0)
-        sbar.append(3)
+        sbar.append(self.input_data["outer_radius"])
+        self.sbar = sbar
         
         heatflux.insert(0,0)
         heatflux.insert(0,0)
@@ -360,8 +436,8 @@ class Panel:
             hcp_final_y.append(i)
         
         for i, value in enumerate(hcp_final_y):
-            hcp_final_y[i].append(sqrt((sqrt(value[0]**2 + value[1]**2)-self.input_data["strike_radius"])**2))
-            hcp_final_y[i].append(sqrt(value[0]**2 + value[1]**2)-self.input_data["strike_radius"])
+            hcp_final_y[i].append(sqrt((sqrt(value[0]**2 + value[1]**2) - self.sbar[2])**2))
+            hcp_final_y[i].append(sqrt(value[0]**2 + value[1]**2) - self.sbar[2])
         
         self.panel_hexagons = hcp_final_y
         
@@ -393,15 +469,15 @@ if __name__ == "__main__":
     
     keys = results.keys()
             
-    f = open("hexagon_centre_points.asc", "w")
-    for key in keys:
-        for channel in results[key].channels:
-            for hexagon in channel.hexagons:
-                f.write(str(hexagon.x) + "\t" + \
-                    "0" + "\t" + \
-                        str(hexagon.y))
-                f.write("\n")
-    f.close()
+    # f = open("hexagon_centre_points.asc", "w")
+    # for key in keys:
+    #     for channel in results[key].channels:
+    #         for hexagon in channel.hexagons:
+    #             f.write(str(hexagon.x) + "\t" + \
+    #                 "0" + "\t" + \
+    #                     str(hexagon.y))
+    #             f.write("\n")
+    # f.close()
     
     f = open("hexagon_data.asc", "w")
     for key in keys:
