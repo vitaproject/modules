@@ -274,9 +274,11 @@ class Panel:
         
         sbar.insert(0, self.input_data["strike_radius"] - (sbar[1] - sbar[0]))
         sbar.insert(0, 0)
+        sbar.append(3)
         
         heatflux.insert(0,0)
         heatflux.insert(0,0)
+        heatflux.append(0)
         
         self.HFf = interp1d(sbar, heatflux)
         
