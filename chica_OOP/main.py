@@ -28,7 +28,7 @@ class Material:
 
 class Hexagon:
     
-    ID = 0
+    hexagon_ID = 0
     
     def __init__(self, hexagon_data, HFf, cross_sectional_area, specific_heat_capacity, \
                  input_temperature, mass_flow, non_dimensional_temperature):
@@ -43,14 +43,16 @@ class Hexagon:
             metal_temperature_sympy(input_temperature, non_dimensional_temperature, \
             Tnew = self.developed_coolant_temperature) 
         
-        self.ID = self.identification()
+        self.hexagon_ID = self.identification()
         
     @classmethod
     def identification(cls):
-        cls.ID += 1
-        return cls.ID
+        cls.hexagon_ID += 1
+        return cls.hexagon_ID
 
 class Channel:
+    
+    channel_ID = 0
     
     def __init__(self, input_pressure, input_temperature, panel_hexagons, \
                  HFf, cross_sectional_area, Ma = 0.0):
@@ -138,8 +140,10 @@ class Channel:
         obj.output_pressure -= obj.pressure_drop
         obj.max_temperature = max([hexagon.metal_temperature for hexagon in obj.hexagons])
         
-        return obj
+        cls.channel_ID = cls.identification()
         
+        return obj
+    
     @classmethod
     def create_optimised_channel(cls, panel_hexagons, HFf, cross_sectional_area, \
                      remaining_hexagons, previous_channel, mass_flow_actual, Ma=0.0):
@@ -184,6 +188,8 @@ class Channel:
         obj.output_pressure = obj.input_pressure - obj.pressure_drop
         obj.max_temperature = previous_channel.max_temperature
         
+        cls.channel_ID = cls.identification()
+        
         return obj
     
     @classmethod
@@ -226,40 +232,65 @@ class Channel:
         obj.output_pressure = obj.input_pressure - obj.pressure_drop
         obj.max_temperature = max([hexagon.metal_temperature for hexagon in obj.hexagons])
         
+        cls.channel_ID = cls.identification()
+        
         return obj
+
+    @classmethod
+    def identification(cls):
+        cls.channel_ID += 1
+        return cls.channel_ID
 
 class Panel:
     
-    def __init__(self, mach_number, number_of_hexagons_in_first_channel, mass_split, \
-                 input_file, heat_flux_file):
+    def __init__(self, input_file, heat_flux_file):
         
         self.channels = []
         self.panel_hexagon = []
-        self.mach_number = mach_number
-        self.number_of_hexagons_in_first_channel = number_of_hexagons_in_first_channel
-        self.mass_flow_split = mass_split
         self.mass_flow_total:float = None
         self.read_inputs(input_file, heat_flux_file)
 
-    def configure(self):
+    def configure(self, mach_number, number_of_hexagons_in_first_channel, mass_split, \
+                  layup_type, distribution_type):
+        
+        # layup_type options: structured, HF_specific
+        # distribution_type options: inboard/outboard, strikepoint
+        
+        self.mach_number = mach_number
+        self.number_of_hexagons_in_first_channel = number_of_hexagons_in_first_channel
+        self.mass_flow_split = mass_split
         self.populate_hexagons()
+        self.layup_type = layup_type
+        self.distribution_type = distribution_type
+        
+        run_options = {"strikepoint":self.strikepoint_setup}
+        
+        self.runtype_selection = self.distribution_type
+        runtype = run_options[self.runtype_selection]
+        runtype()
+        
+    def strikepoint_setup(self):
         self.add_first_channel()
-        # self.add_optimised_channels(self.channels[0])
-        self.add_structured_channels(self.channels[0])
-    
+        self.add_further_channels(self.channels[0])
+        
     def add_first_channel(self):
         
         self.channels.append(Channel.create_first_channel(self.input_data["input_pressure"], 
             self.input_data["input_temperature"], self.panel_hexagons, self.HFf, self.cross_sectional_area, \
             self.number_of_hexagons_in_first_channel, Ma = self.mach_number))
+    
+    def add_further_channels(self, first_channel):
         
-    def add_optimised_channels(self, first_channel):
-
+        distribution_options = {"strikepoint":self.add_strikepoint_channels}
+        
+        distribution_selection = distribution_options[self.distribution_type]
+            
         new_channels = [[], []]
         
         reordered_hexagons = sorted(self.panel_hexagons, key = lambda x:x[3], reverse = False)
         inboard_hexagons, outboard_hexagons = [hexagons for hexagons in reordered_hexagons if hexagons[-1] <= 0.0], \
             [hexagons for hexagons in reordered_hexagons if hexagons[-1] >= 0.0]
+        
         all_remaining_hexagons = [inboard_hexagons, outboard_hexagons]
         
         self.mass_flow_total = first_channel.mass_flow_total
@@ -267,18 +298,7 @@ class Panel:
         self.mass_flow_actual = [self.mass_flow_total * (1-self.mass_flow_split), self.mass_flow_total * \
             self.mass_flow_split]
         
-        for index, direction in enumerate(all_remaining_hexagons):
-            
-            mass_flow_actual = self.mass_flow_actual[index]
-            
-            new_channels[index].append(Channel.create_optimised_channel(self.panel_hexagons, \
-                    self.HFf, self.cross_sectional_area, direction, first_channel, \
-                    mass_flow_actual))
-            
-            while len(direction) >= 1.0:
-                new_channels[index].append(Channel.create_optimised_channel(self.panel_hexagons, \
-                    self.HFf, self.cross_sectional_area, direction, new_channels[index][-1], \
-                    mass_flow_actual))
+        distribution_selection(all_remaining_hexagons, new_channels, first_channel)
         
         new_channels[0].reverse()
         for channel in new_channels[0]:
@@ -287,39 +307,30 @@ class Panel:
         for channel in new_channels[1]:
             self.channels.append(channel)
     
-    def add_structured_channels(self, first_channel):
-        
-        new_channels = [[], []]
-        
-        reordered_hexagons = sorted(self.panel_hexagons, key = lambda x:x[3], reverse = False)
-        inboard_hexagons, outboard_hexagons = [hexagons for hexagons in reordered_hexagons if hexagons[-1] <= 0.0], \
-            [hexagons for hexagons in reordered_hexagons if hexagons[-1] >= 0.0]
-        all_remaining_hexagons = [inboard_hexagons, outboard_hexagons]
+    def add_structured_channels(self):
+        # this will have another loop for calculating channel properties
+        pass
     
-        self.mass_flow_total = first_channel.mass_flow_total
+    def add_strikepoint_channels(self, all_remaining_hexagons, new_channels, first_channel):
         
-        self.mass_flow_actual = [self.mass_flow_total * (1-self.mass_flow_split), self.mass_flow_total * \
-            self.mass_flow_split]
+        layup_options = {"structured":Channel.create_structured_channel,\
+                         "HF_specific":Channel.create_optimised_channel}
         
+        layup_selection = layup_options[self.layup_type]
+            
         for index, direction in enumerate(all_remaining_hexagons):
             
             mass_flow_actual = self.mass_flow_actual[index]
             
-            new_channels[index].append(Channel.create_structured_channel(self.panel_hexagons, \
+            new_channels[index].append(layup_selection(self.panel_hexagons, \
                     self.HFf, self.cross_sectional_area, direction, first_channel, \
                     mass_flow_actual))
             
             while len(direction) >= 1.0:
-                new_channels[index].append(Channel.create_structured_channel(self.panel_hexagons, \
+                new_channels[index].append(layup_selection(self.panel_hexagons, \
                     self.HFf, self.cross_sectional_area, direction, new_channels[index][-1], \
                     mass_flow_actual))
         
-        for channel in new_channels[0]:
-            self.channels.insert(0, channel)
-        
-        for channel in new_channels[1]:
-            self.channels.append(channel)
-    
     def read_inputs(self, inputs_filename, q_filename):
         # read asc files and store results to member variables (self...)
         
@@ -438,7 +449,7 @@ class Panel:
         for i, value in enumerate(hcp_final_y):
             hcp_final_y[i].append(sqrt((sqrt(value[0]**2 + value[1]**2) - self.sbar[2])**2))
             hcp_final_y[i].append(sqrt(value[0]**2 + value[1]**2) - self.sbar[2])
-        
+         
         self.panel_hexagons = hcp_final_y
         
 if __name__ == "__main__":
@@ -450,22 +461,28 @@ if __name__ == "__main__":
     number_of_hexagons_range = linspace(500, 2000, 1) #4
     mach_number_range = linspace(0.15, 0.3, 1) #4
     mass_split_range = linspace(0.5, 0.9, 1) #3
+    distribution_options = ["strikepoint"]
+    layup_options = ["HF_specific"] # structured
     
     for number_of_hexagons in number_of_hexagons_range:
         for mach_number in mach_number_range:
             for mass_split in mass_split_range:
-        
-                print([number_of_hexagons, mach_number, mass_split])
-                
-                key = "panel" + "_" + \
-                    str(number_of_hexagons) + "_" + \
-                    str(mach_number) + "_" + \
-                    str(mass_split)
-                
-                panel = Panel(float(mach_number), int(number_of_hexagons), float(mass_split), "inputs.xml", "q_adjusted.asc")
-                panel.configure()
-        
-                results[key] = panel
+                for layup in layup_options:
+            
+                    print([number_of_hexagons, mach_number, mass_split, distribution_options[0], layup])
+                    
+                    key = "panel" + "_" + \
+                        str(number_of_hexagons) + "_" + \
+                        str(mach_number) + "_" + \
+                        str(mass_split) + "_" + \
+                        str(distribution_options[0]) + "_" + \
+                        str(layup)
+                    
+                    panel = Panel("inputs.xml", "q_adjusted.asc")
+                    panel.configure(float(mach_number), int(number_of_hexagons), float(mass_split), \
+                                    layup, distribution_options[0])
+            
+                    results[key] = panel
     
     keys = results.keys()
             
