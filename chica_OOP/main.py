@@ -82,27 +82,9 @@ class Channel:
         self.output_temperature: float = None # needs to be accessed at channel level
         self.output_pressure = input_pressure # needs to be accessed at channel level
         self.max_temperature: float = None # needs to be accessed at channel level
-        self.channel_ID: int = None
         
-    def repeated_operations(self):
-        
-        # potential properties: 
-        # fluid input properties calculated:
-        # viscosity, Reynolds number, Euler number, 
-        # fluid developed properties calculated:
-        # pressure drop
-        
-        self.non_dimensional_mass_flow, self.mass_flow, self.fluid_properties.specific_heat_capacity = \
-            mstar_sympy(self.input_temperature, self.input_pressure, self.cross_sectional_area, \
-            massflow = self.mass_flow)
-        self.reynolds_number, self.jet_velocity = Reynolds_sympy(self.fluid_properties.density, \
-            self.fluid_properties.viscosity, self.jet_diameter, u = self.jet_velocity)
-        self.euler_number, self.reynolds_number = Euler_sympy(Re = self.reynolds_number)
-        self.pressure_drop, self.euler_number, self.jet_velocity = pdrop_sympy(\
-            self.fluid_properties.density, Eu = self.euler_number, u = self.jet_velocity)
-        self.non_dimensional_temperature, self.non_dimensional_mass_flow = \
-            taus_sympy(mstar = self.non_dimensional_mass_flow)
-            
+        self.channel_ID = self.identification()
+                
     def get_hexagons(self, hexagon_selection):
         
         for hexagon in hexagon_selection:
@@ -140,8 +122,6 @@ class Channel:
         obj.output_pressure -= obj.pressure_drop
         obj.max_temperature = max([hexagon.metal_temperature for hexagon in obj.hexagons])
         
-        cls.channel_ID = cls.identification()
-        
         return obj
     
     @classmethod
@@ -154,41 +134,14 @@ class Channel:
         obj.mass_flow = previous_channel.mass_flow
         obj.max_temperature_from_previous_channel = previous_channel.max_temperature
         
-        obj.mass_flow, number_of_hexagons_required = massflow_nextrows( \
+        obj.mass_flow, obj.number_of_hexagons_required = massflow_nextrows( \
             remaining_hexagons[0], obj.mass_flow, obj.fluid_properties.specific_heat_capacity, \
             obj.cross_sectional_area, obj.max_temperature_from_previous_channel, \
             obj.input_temperature, obj.HFf, mass_flow_actual)
-
-        if obj.mass_flow == 0.0:
-            number_of_hexagons_required = len(remaining_hexagons)
-            obj.mass_flow = mass_flow_actual / number_of_hexagons_required
-
-        elif number_of_hexagons_required <= len(remaining_hexagons):
-            number_of_hexagons_required = int(number_of_hexagons_required)
-            obj.mass_flow = mass_flow_actual / number_of_hexagons_required
-
-        else:
-            number_of_hexagons_required = len(remaining_hexagons)
-            obj.mass_flow = mass_flow_actual / number_of_hexagons_required
-
-        obj.mass_flow, obj.jet_velocity, obj.jet_cross_sectional_area, \
-        obj.fluid_properties.density, obj.jet_diameter = mass_flow_sympy(obj.input_temperature, \
-                                                                           obj.input_pressure, massflow=obj.mass_flow)
-
-        obj.mach_number, obj.jet_velocity = mach_number_sympy(obj.input_temperature, \
-                                                                u=obj.jet_velocity)
-
-        obj.repeated_operations()
-
-        obj.get_hexagons(remaining_hexagons[:number_of_hexagons_required])
-        del remaining_hexagons[:number_of_hexagons_required]
-
-        obj.output_temperature = sum([hexagon.developed_coolant_temperature for hexagon in obj.hexagons]) \
-                                  / number_of_hexagons_required
-        obj.output_pressure = obj.input_pressure - obj.pressure_drop
-        obj.max_temperature = previous_channel.max_temperature
         
-        cls.channel_ID = cls.identification()
+        remainging_hexagons = obj.repeated_operations(1, remaining_hexagons, mass_flow_actual)
+        
+        obj.max_temperature = previous_channel.max_temperature
         
         return obj
     
@@ -198,43 +151,64 @@ class Channel:
 
         obj = cls(previous_channel.output_pressure, previous_channel.output_temperature, panel_hexagons, \
                          HFf, cross_sectional_area)
-
+        
         obj.mass_flow = previous_channel.mass_flow
         obj.max_temperature_from_previous_channel = previous_channel.max_temperature
-        number_of_hexagons_required = len(previous_channel.hexagons)
+        obj.number_of_hexagons_required = len(previous_channel.hexagons)
+
+        remainging_hexagons = obj.repeated_operations(1, remaining_hexagons, mass_flow_actual)
         
-        if obj.mass_flow == 0.0:
-            number_of_hexagons_required = len(remaining_hexagons)
-            obj.mass_flow = mass_flow_actual / number_of_hexagons_required
-
-        elif number_of_hexagons_required <= len(remaining_hexagons):
-            number_of_hexagons_required = int(number_of_hexagons_required)
-            obj.mass_flow = mass_flow_actual / number_of_hexagons_required
-
-        else:
-            number_of_hexagons_required = len(remaining_hexagons)
-            obj.mass_flow = mass_flow_actual / number_of_hexagons_required
-
-        obj.mass_flow, obj.jet_velocity, obj.jet_cross_sectional_area, \
-        obj.fluid_properties.density, obj.jet_diameter = mass_flow_sympy(obj.input_temperature, \
-                                                                           obj.input_pressure, massflow=obj.mass_flow)
-
-        obj.mach_number, obj.jet_velocity = mach_number_sympy(obj.input_temperature, \
-                                                                u=obj.jet_velocity)
-
-        obj.repeated_operations()
-        
-        obj.get_hexagons(remaining_hexagons[:number_of_hexagons_required])
-        del remaining_hexagons[:number_of_hexagons_required]
-
-        obj.output_temperature = sum([hexagon.developed_coolant_temperature for hexagon in obj.hexagons]) \
-                                  / number_of_hexagons_required
-        obj.output_pressure = obj.input_pressure - obj.pressure_drop
         obj.max_temperature = max([hexagon.metal_temperature for hexagon in obj.hexagons])
         
-        cls.channel_ID = cls.identification()
-        
         return obj
+
+    def repeated_operations(self, flag=None, remaining_hexagons=None, mass_flow_actual = None):
+    
+    # potential properties: 
+    # fluid input properties calculated:
+    # viscosity, Reynolds number, Euler number, 
+    # fluid developed properties calculated:
+    # pressure drop
+    
+        if flag == 1:
+            if self.mass_flow == 0.0:
+                self.number_of_hexagons_required = len(remaining_hexagons)
+                self.mass_flow = mass_flow_actual / self.number_of_hexagons_required
+    
+            elif self.number_of_hexagons_required <= len(remaining_hexagons):
+                self.number_of_hexagons_required = int(self.number_of_hexagons_required)
+                self.mass_flow = mass_flow_actual / self.number_of_hexagons_required
+    
+            else:
+                self.number_of_hexagons_required = len(remaining_hexagons)
+                self.mass_flow = mass_flow_actual / self.number_of_hexagons_required
+    
+            self.mass_flow, self.jet_velocity, self.jet_cross_sectional_area, \
+            self.fluid_properties.density, self.jet_diameter = mass_flow_sympy(self.input_temperature, \
+                                                                               self.input_pressure, massflow=self.mass_flow)
+    
+            self.mach_number, self.jet_velocity = mach_number_sympy(self.input_temperature, \
+                                                                    u=self.jet_velocity)
+        
+        self.non_dimensional_mass_flow, self.mass_flow, self.fluid_properties.specific_heat_capacity = \
+            mstar_sympy(self.input_temperature, self.input_pressure, self.cross_sectional_area, \
+            massflow = self.mass_flow)
+        self.reynolds_number, self.jet_velocity = Reynolds_sympy(self.fluid_properties.density, \
+            self.fluid_properties.viscosity, self.jet_diameter, u = self.jet_velocity)
+        self.euler_number, self.reynolds_number = Euler_sympy(Re = self.reynolds_number)
+        self.pressure_drop, self.euler_number, self.jet_velocity = pdrop_sympy(\
+            self.fluid_properties.density, Eu = self.euler_number, u = self.jet_velocity)
+        self.non_dimensional_temperature, self.non_dimensional_mass_flow = \
+            taus_sympy(mstar = self.non_dimensional_mass_flow)
+        
+        if flag == 1:
+            self.get_hexagons(remaining_hexagons[:self.number_of_hexagons_required])
+            del remaining_hexagons[:self.number_of_hexagons_required]
+    
+            self.output_temperature = sum([hexagon.developed_coolant_temperature for hexagon in self.hexagons]) \
+                                      / self.number_of_hexagons_required
+            self.output_pressure = self.input_pressure - self.pressure_drop
+            return remaining_hexagons
 
     @classmethod
     def identification(cls):
@@ -270,6 +244,7 @@ class Panel:
         runtype()
         
     def strikepoint_setup(self):
+        
         self.add_first_channel()
         self.add_further_channels(self.channels[0])
         
@@ -300,14 +275,14 @@ class Panel:
         
         distribution_selection(all_remaining_hexagons, new_channels, first_channel)
         
-        new_channels[0].reverse()
+        # new_channels[0].reverse()
         for channel in new_channels[0]:
             self.channels.insert(0, channel)
         
         for channel in new_channels[1]:
             self.channels.append(channel)
     
-    def add_structured_channels(self):
+    def add_inout_channels(self):
         # this will have another loop for calculating channel properties
         pass
     
@@ -330,6 +305,7 @@ class Panel:
                 new_channels[index].append(layup_selection(self.panel_hexagons, \
                     self.HFf, self.cross_sectional_area, direction, new_channels[index][-1], \
                     mass_flow_actual))
+                
         
     def read_inputs(self, inputs_filename, q_filename):
         # read asc files and store results to member variables (self...)
