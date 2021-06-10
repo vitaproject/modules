@@ -288,7 +288,7 @@ def massflow_nextrows(coordinates, massflow, cp, Ahex, Tpeak, Tinput, HFf, massf
         flux versus radial point 
     """
     
-    Ri = sqrt(coordinates[0]**2 + coordinates[1]**2)
+    Ri = sqrt(coordinates[0]**2 + coordinates[2]**2)
     HFi = HFf(Ri) * Ahex
     
     A = massflow
