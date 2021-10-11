@@ -329,11 +329,11 @@ class Panel:
         
         if self.cell_type == "DLH":       
             self.populate_cells()
-            self.configure_hexagons()
+            # self.configure_hexagons()
             
         elif self.cell_type == "JIVC":       
             self.populate_cells()
-            self.configure_squares()
+            # self.configure_squares()
         
         else:
             raise ValueError("Error, no cell type assigned")
@@ -594,13 +594,41 @@ class Panel:
 
         self.HFf = interp1d(sbar, heatflux)
     
-    def hexagon_starter(self):
+    def hexagon_starter(self, cp, point_x1, line_angle, topy):
         
-        pass
-    
-    def squares_starter(self):
+        width = self.input_data["hexagon_width"]
+        height = width / 2 * tan(60 * pi / 180)
         
-        pass
+        no_points_y = int(round(topy/height, 0))
+        no_points_x = int(round(((self.input_data["outer_radius"]-point_x1) /
+                                 (1.5*width)), 0))
+
+        a = width/2
+        self.cross_sectional_area = (3 * sqrt(3) / 2) * a ** 2
+
+        for i in range(no_points_x):
+            for j in range(no_points_y):
+                cp.append([i*1.5*width + point_x1, j*height])
+                cp.append([i*1.5*width + 0.75*width + point_x1, 
+                           j*height + 0.5*height])
+        
+        return cp, height, width
+
+    def squares_starter(self, cp, point_x1, line_angle, topy):
+        
+        square_height = self.input_data["height"]
+        square_width = self.input_data["width"]
+        self.cross_sectional_area = square_height * square_width
+        
+        no_points_y = int(round(topy/square_height, 0))
+        no_points_x = int(round((self.input_data["outer_radius"]-point_x1) /
+                                 (square_width), 0))
+
+        for i in range(no_points_x):
+            for j in range(no_points_y):
+                cp.append([i*square_width + point_x1, j*square_height])
+                
+        return cp, square_width, square_height
     
     def populate_cells(self):
 
@@ -608,39 +636,26 @@ class Panel:
 
         cp = []  # a list for assigning centre points of hexagon array, (x, y)
         cp_remove = []  # list of values to remove from cp as are out of bounds
-        hcp_final = []  # list of remaining central points
-        hcp_ID = []  # a list of the matrix ID's left after removing out of
+        cp_final = []  # list of remaining central points
+        cp_ID = []  # a list of the matrix ID's left after removing out of
         # bounds points
-        hcp_final_y = []
-        hcp_final_y_mirror = []
-        
-        # ------------------------------------------------ hexagon specific definitions, same for both codes
-        
-        hexagon_height = \
-            self.input_data["hexagon_width"] / 2 * tan(60 * pi / 180)
+        cp_final_y = []
+        cp_final_y_mirror = []
+
         theta = (360.0 / self.input_data["number_of_plates"] / 2 -
-                 self.input_data["swept_angle_gap_between_plates"]) * pi / 180
+             self.input_data["swept_angle_gap_between_plates"]) * pi / 180
 
         point_x1 = self.input_data["inner_radius"]*cos(theta)
         point_y1 = self.input_data["inner_radius"]*sin(theta)
         line_angle = tan(theta)
-
         topy = self.input_data["outer_radius"] * sin(theta)
-        no_points_y = int(round((topy/hexagon_height), 0))
-        no_points_x = int(round(((self.input_data["outer_radius"]-point_x1) /
-                                 (1.5*self.input_data["hexagon_width"])), 0))
 
-        a = self.input_data["hexagon_width"]/2
-        self.cross_sectional_area = (3 * sqrt(3) / 2) * a ** 2
+        cell_type_options = {"DLH":self.hexagon_starter, \
+                             "JIVC":self.squares_starter}
 
-        for i in range(no_points_x):
-            for j in range(no_points_y):
-                cp.append([i*1.5*self.input_data["hexagon_width"] + point_x1,
-                           j*hexagon_height])
-                cp.append([i*1.5*self.input_data["hexagon_width"] +
-                           0.75*self.input_data["hexagon_width"] +
-                           point_x1, j*hexagon_height + 0.5*hexagon_height])
-
+        cell_type_selection = cell_type_options[self.cell_type]
+        cp, width, height = cell_type_selection(cp, point_x1, line_angle, topy)
+        
         # ------------------------------------------------ bounding box point removal, same for both codes
 
         x, y, r = symbols("x y r")
@@ -677,38 +692,34 @@ class Panel:
 
         for i in cp:
             if i not in cp_remove:
-                hcp_final.append(i)
+                cp_final.append(i)
 
-        # ---- create centre points for triangles ---- #
+        for i in cp_final:
+            cp_ID.append(
+                [i[0] / width - cp_final[0][0] / width, 0, i[1] / height])
+            cp_final_y.append([i[0], 0, i[1]])
 
-        for i in hcp_final:
-            hcp_ID.append(
-                [i[0] / self.input_data["hexagon_width"] - hcp_final[0][0] /
-                 self.input_data["hexagon_width"], 0, i[1] / hexagon_height])
-            hcp_final_y.append([i[0], 0, i[1]])
-
-        for i in hcp_final_y:
+        for i in cp_final_y:
             if i[2] == 0:
                 None
             else:
-                hcp_final_y_mirror.append([i[0], 0, -i[2]])
+                cp_final_y_mirror.append([i[0], 0, -i[2]])
 
-        for i in hcp_final_y_mirror:
-            hcp_final_y.append(i)
+        for i in cp_final_y_mirror:
+            cp_final_y.append(i)
 
-        for i, value in enumerate(hcp_final_y):
-            hcp_final_y[i].append(
+        for i, value in enumerate(cp_final_y):
+            cp_final_y[i].append(
                 sqrt((sqrt(value[0]**2 + value[2]**2) - self.sbar[2])**2))
             # distance from strikepoint, absolute
-            hcp_final_y[i].append(
+            cp_final_y[i].append(
                 sqrt(value[0]**2 + value[2]**2) - self.sbar[2])
             # distance from strikepoint, direction dependant
-            hcp_final_y[i].append(
+            cp_final_y[i].append(
                 sqrt(value[0]**2 + value[2]**2))
             # absolute radius
         
-        self.panel_hexagons = hcp_final_y
-
+        self.panel_hexagons = cp_final_y
 
 if __name__ == "__main__":
     start_time = time.time()
@@ -739,18 +750,25 @@ if __name__ == "__main__":
                                       float(mach_number),
                                       int(number_of_hexagons),
                                       float(mass_split), layup, distribution)
-                        panel("DLH")
+                        panel("JIVC")
 
                         results[key] = panel
 
     keys = results.keys()
 
+    # f = open("hexagon_centre_points.asc", "w")
+    # for key in keys:
+    #     for channel in results[key].channels:
+    #         for hexagon in channel.hexagons:
+    #             f.write(str(hexagon.x) + "\t" + "0" + "\t" + str(hexagon.y))
+    #             f.write("\n")
+    # f.close()
+
     f = open("hexagon_centre_points.asc", "w")
     for key in keys:
-        for channel in results[key].channels:
-            for hexagon in channel.hexagons:
-                f.write(str(hexagon.x) + "\t" + "0" + "\t" + str(hexagon.y))
-                f.write("\n")
+        for hexagon in results[key].panel_hexagons:
+            f.write(str(hexagon[0]) + "\t" + "0" + "\t" + str(hexagon[2]))
+            f.write("\n")
     f.close()
 
     f = open("hexagon_data.asc", "w")
