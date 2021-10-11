@@ -19,6 +19,32 @@ from CHICA.flow_properties import mach_number_sympy, \
                                         taus_sympy, \
                                         massflow_nextrows
 
+class VJ_cell:
+
+    VJ_cell_ID = 0
+
+    def __init__(self, x, y, HFf, cross_sectional_area, specific_heat_capacity, \
+                 input_temperature, mass_flow, non_dimensional_temperature):
+
+        self.x = x
+        self.y = y
+        self.R = sqrt(x**2 * y**2)
+
+        heatflux = HFf(self.R) * cross_sectional_area
+        self.developed_coolant_temperature, self.mass_flow = \
+            coolant_temperature_sympy(heatflux, specific_heat_capacity,
+                                      input_temperature, massflow=mass_flow)
+        self.metal_temperature, self.developed_coolant_temperature = \
+            metal_temperature_sympy(input_temperature,
+                                    non_dimensional_temperature,
+                                    Tnew=self.developed_coolant_temperature)
+
+        self.VJ_cell_ID = self.identification()
+
+    @classmethod
+    def identification(cls):
+        cls.VJ_cell_ID += 1
+        return cls.VJ_cell_ID
 
 class Material:
 
@@ -254,12 +280,12 @@ class Channel:
                            self.fluid_properties.viscosity, self.jet_diameter,
                            u=self.jet_velocity)
         self.euler_number, self.reynolds_number = \
-            Euler_sympy(Re=self.reynolds_number)
+            Euler_sympy("DLH", Re=self.reynolds_number)
         self.pressure_drop, self.euler_number, self.jet_velocity = \
             pdrop_sympy(self.fluid_properties.density, Eu=self.euler_number,
                         u=self.jet_velocity)
         self.non_dimensional_temperature, self.non_dimensional_mass_flow = \
-            taus_sympy(mstar=self.non_dimensional_mass_flow)
+            taus_sympy("DLH", mstar=self.non_dimensional_mass_flow)
 
         if flag == 1:
             self.get_hexagons(
@@ -294,11 +320,29 @@ class Panel:
         self.number_of_hexagons_in_first_channel = \
             number_of_hexagons_in_first_channel
         self.mass_flow_split = mass_split
-        self.populate_hexagons()
         self.layup_type = layup_type
         self.distribution_type = distribution_type
 
-    def configure(self):
+    def __call__(self, cell_type):
+        
+        self.cell_type = cell_type
+        
+        if self.cell_type == "DLH":       
+            self.populate_cells()
+            self.configure_hexagons()
+            
+        elif self.cell_type == "JIVC":       
+            self.populate_cells()
+            self.configure_squares()
+        
+        else:
+            raise ValueError("Error, no cell type assigned")
+    
+    def configure_squares(self):
+        pass
+    
+    
+    def configure_hexagons(self):
 
         # adds hexagons to middle channel and calcs flow properties
         self.channels.append(Channel.create_first_channel(
@@ -549,8 +593,18 @@ class Panel:
         plt.ylabel("Heat Flux, MW/m2")
 
         self.HFf = interp1d(sbar, heatflux)
+    
+    def hexagon_starter(self):
+        
+        pass
+    
+    def squares_starter(self):
+        
+        pass
+    
+    def populate_cells(self):
 
-    def populate_hexagons(self):
+        # ------------------------------------------------ centre point definitions, same for both codes
 
         cp = []  # a list for assigning centre points of hexagon array, (x, y)
         cp_remove = []  # list of values to remove from cp as are out of bounds
@@ -559,7 +613,9 @@ class Panel:
         # bounds points
         hcp_final_y = []
         hcp_final_y_mirror = []
-
+        
+        # ------------------------------------------------ hexagon specific definitions, same for both codes
+        
         hexagon_height = \
             self.input_data["hexagon_width"] / 2 * tan(60 * pi / 180)
         theta = (360.0 / self.input_data["number_of_plates"] / 2 -
@@ -584,6 +640,8 @@ class Panel:
                 cp.append([i*1.5*self.input_data["hexagon_width"] +
                            0.75*self.input_data["hexagon_width"] +
                            point_x1, j*hexagon_height + 0.5*hexagon_height])
+
+        # ------------------------------------------------ bounding box point removal, same for both codes
 
         x, y, r = symbols("x y r")
         topy = (line_angle * (x-point_x1)) + point_y1
@@ -681,7 +739,7 @@ if __name__ == "__main__":
                                       float(mach_number),
                                       int(number_of_hexagons),
                                       float(mass_split), layup, distribution)
-                        panel.configure()
+                        panel("DLH")
 
                         results[key] = panel
 
