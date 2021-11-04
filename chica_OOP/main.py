@@ -328,32 +328,10 @@ class Panel:
 
         elif self.cell_type == "JIVC":       
             self.populate_cells()
-            # self.configure_squares()
+            self.configure_squares()
 
         else:
             raise ValueError("Error, no cell type assigned")
-
-    def configure_squares(self):
-        pass
-
-    def configure_hexagons(self):
-
-        # adds hexagons to middle channel and calcs flow properties
-        self.channels.append(Channel.create_first_channel(
-            self.input_data["input_pressure"],
-            self.input_data["input_temperature"], self.panel_hexagons,
-            self.HFf, self.cross_sectional_area,
-            self.number_of_hexagons_in_first_channel, self.distribution_type,
-            self.layup_type, Ma=self.mach_number))
-
-        self.mass_flow_total = self.channels[0].mass_flow_total
-
-        implementation_options = {"strikepoint": self.strikepoint_injection,
-                                  "inout": self.inout_injection}
-        implementation_choice = self.distribution_type
-
-        run = implementation_options[implementation_choice]
-        run(self.channels[0])
 
     def strikepoint_injection(self, first_channel):
 
@@ -622,16 +600,47 @@ class Panel:
                 cp.append([i*width + point_x1, j*height])
                 
         return cp, width, height
-    
+
+    def configure_hexagons(self):
+
+        # adds hexagons to middle channel and calcs flow properties
+        self.channels.append(Channel.create_first_channel(
+            self.input_data["input_pressure"],
+            self.input_data["input_temperature"], self.panel_hexagons,
+            self.HFf, self.cross_sectional_area,
+            self.number_of_hexagons_in_first_channel, self.distribution_type,
+            self.layup_type, Ma=self.mach_number))
+
+        self.mass_flow_total = self.channels[0].mass_flow_total
+
+        implementation_options = {"strikepoint": self.strikepoint_injection,
+                                  "inout": self.inout_injection}
+        implementation_choice = self.distribution_type
+
+        run = implementation_options[implementation_choice]
+        run(self.channels[0])
+
+    def configure_squares(self):
+
+        # calculate mass flows
+        first_channel = [i for i in self.panel_hexagons if i[5] <= self.rset[1]]
+        Ma, u = mach_number_sympy(373.15, Ma = 0.3)
+        mass_flow, u, Ajet, density, D = mass_flow_sympy(373.15, 100E5, u = u)
+        total_mass_flow_to_system = mass_flow * len(first_channel)
+        print(total_mass_flow_to_system)
+
+        last_channel = [i for i in self.panel_hexagons if i[5] >= self.rset[-2]]
+        mass_flow = total_mass_flow_to_system / len(last_channel)
+        mass_flow, u, Ajet, density, D = mass_flow_sympy(373.15, 100E5, massflow = mass_flow)
+        Ma, u = mach_number_sympy(373.15, u = u)
+        print([mass_flow, u, Ma])
+
     def bounding_box(self, first_radius, second_radius, cp_final_y, rotation_theta_set, split_theta):
 
         cp = []  # a list for assigning centre points of hexagon array, (x, y)
         cp_remove = []  # list of values to remove from cp as are out of bounds
         cp_final = []  # list of remaining central points
-        cp_ID = []  # a list of the matrix ID's left after removing out of
-        # bounds points
-        cp_final_y_mirror = []        
-        cp_final_new = []
+        cpsets = []
 
         point_x1 = first_radius*cos(split_theta)
         point_y1 = first_radius*sin(split_theta)
@@ -644,94 +653,60 @@ class Panel:
         cell_type_selection = cell_type_options[self.cell_type]
         cp, width, height = cell_type_selection(cp, point_x1, line_angle, topy)
 
-        x, y, r = symbols("x y r")
-        topy = (line_angle * (x-point_x1)) + point_y1
-        arc = ((r**2 - ((y-self.input_data["y_displacement_from_origin"])**2))
-                ** 0.5) + self.input_data["x_displacement_from_origin"]
+        topy = lambda x, x1 = point_x1, y1 = point_y1, m = line_angle: m * (x - x1) + y1
+        arc = lambda r, y, y_dis = self.input_data["y_displacement_from_origin"], \
+                x_dis = self.input_data["x_displacement_from_origin"]: \
+                    ((r**2 - ((y-y_dis)**2)) ** 0.5) + x_dis
 
-        for i, coordinates in enumerate(cp):
+        for coordinates in cp:
 
-            if topy.subs([(x, coordinates[0])]) <= coordinates[1]:
+            if topy(coordinates[0]) <= coordinates[1]:
                 cp_remove.append(coordinates)
 
             # inner arc
             try:
-                float(arc.subs([(r, first_radius),
-                                (y, coordinates[1])]))
+                arc(first_radius, coordinates[1])
             except:
                 None
             else:
-                if arc.subs([(r, first_radius),
-                              (y, coordinates[1])]) >= coordinates[0]:
+                if arc(first_radius, coordinates[1]) >= coordinates[0]:
                     cp_remove.append(coordinates)
 
             # outer arc
             try:
-                float(arc.subs([(r, second_radius),
-                                (y, coordinates[1])]))
+                arc(second_radius, coordinates[1])
             except:
                 None
             else:
-                if arc.subs([(r, second_radius),
-                              (y, coordinates[1])]) <= coordinates[0]:
+                if arc(second_radius, coordinates[1]) <= coordinates[0]:
                     cp_remove.append(coordinates)
+
+        # remove centre points from cp_final list and copy about 0
 
         for i in cp:
             if i not in cp_remove:
-                cp_final.append(i)
-
-        for i in cp_final:
-            cp_ID.append(
-                [i[0] / width - cp_final[0][0] / width, 0, i[1] / height])
-            cp_final_new.append([i[0], 0, i[1]])
-
-        for i in cp_final_new:
-            if i[2] == 0:
-                pass
-            else:
-                cp_final_y_mirror.append([i[0], 0, -i[2]])
-
-        # - need to copy and rotate the copies to 
-
-        for i in cp_final_y_mirror:
-            cp_final_new.append(i)
-
-        for i, value in enumerate(cp_final_new):
-            cp_final_new[i].append(
-                sqrt(value[0]**2 + value[2]**2))
-            # absolute radius
-            cp_final_new[i].append(
-                atan(value[2]/value[0]))
-            # angle from the origin for each point
-
-        cpsets = []
+                cp_final.append([i[0], 0, i[1], sqrt(i[0]**2 + i[1]**2), atan(i[1]/i[0])])
+                if cp_final[-1][2] == 0:
+                    pass
+                else:
+                    cp_final.append([i[0], 0, -i[1], sqrt(i[0]**2 + i[1]**2), atan(-i[1]/i[0])])
 
         for i in rotation_theta_set:
-            cpsets.append(array(deepcopy(cp_final_new)))
+            cpsets.append(array(deepcopy(cp_final)))
 
-        cp_final_new = []
+        cp_final = []
         
         for i, cpset in enumerate(cpsets):
             for x, y, z, R, theta in cpset:
-                cp_final_new.append([R * cos(rotation_theta_set[i] + theta), \
-                                    y, \
-                                    R * sin(rotation_theta_set[i] + theta)])
+                cp_final.append([R * cos(rotation_theta_set[i] + theta), \
+                                 y, \
+                                 R * sin(rotation_theta_set[i] + theta), \
+                                 sqrt((sqrt(x**2 + z**2) - self.sbar[2])**2), \
+                                 sqrt(x**2 + z**2) - self.sbar[2], \
+                                 sqrt(x**2 + z**2), \
+                                 atan(z/x)])
 
-        for i, value in enumerate(cp_final_new):
-            cp_final_new[i].append(
-                sqrt((sqrt(value[0]**2 + value[2]**2) - self.sbar[2])**2))
-            # distance from strikepoint, absolute
-            cp_final_new[i].append(
-                sqrt(value[0]**2 + value[2]**2) - self.sbar[2])
-            # distance from strikepoint, direction dependant
-            cp_final_new[i].append(
-                sqrt(value[0]**2 + value[2]**2))
-            # absolute radius
-            cp_final_new[i].append(
-                atan(value[2]/value[0]))
-            # angle from the origin for each point
-
-        for i in cp_final_new:
+        for i in cp_final:
             cp_final_y.append(deepcopy(i))
 
         return cp_final_y
@@ -744,23 +719,26 @@ class Panel:
         rotation_set = []
         theta_set = []
 
-        n = [int(ni) for ni in self.input_data["n"]]
+        n = array([int(ni) for ni in self.input_data["n"]])
         m = int(self.input_data["m"])
         
         if len(n) != m:
+            print([len(n), m])
             raise Exception(""" the number of radial slices is not equal to the number of provided lateral slices """)
 
-        for ni in n:
-
-            single_n_angle = self.input_data["number_of_plates"] * ni * \
-                self.input_data["number_of_carriers"]
-
-            theta_set.append((360.0 / single_n_angle / 2 - self.input_data["swept_angle_gap_between_plates"]) * pi / 180)
-            rotation_set.append(theta_set[-1] * ni * 2 * linspace((ni-1)*(1/(2*ni)), - (ni-1)*(1/(2*ni)), ni))
-
-        rset = linspace(self.input_data["inner_radius"], \
+        self.rset = linspace(self.input_data["inner_radius"], \
                         self.input_data["outer_radius"], \
                         m+1)
+        rset = self.rset
+        print(rset)
+        theta_set = ((((360.0 / (self.input_data["number_of_plates"] * n * \
+                    self.input_data["number_of_carriers"])) / 2) - \
+                    (self.input_data["swept_angle_gap_between_plates"]/2)) * \
+                    pi / 180)
+
+        for i, ni in enumerate(n):
+
+            rotation_set.append(theta_set[i] * ni * 2 * linspace((ni-1)*(1/(2*ni)), - (ni-1)*(1/(2*ni)), ni))
 
         for i, r in enumerate(rset):
             if len(rset) - 1 == i:
