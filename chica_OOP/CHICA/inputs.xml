@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <inputdata>
-<number_of_plates>36</number_of_plates>
-<hexagon_width>0.0064</hexagon_width>
+<number_of_plates>14</number_of_plates>
+<width>0.0032</width>
+<height>0.00308</height>
 <inner_radius>1.036</inner_radius>
 <outer_radius>2.249</outer_radius>
 <x_displacement_from_origin>0.0</x_displacement_from_origin>
 <y_displacement_from_origin>0.0</y_displacement_from_origin>
 <swept_angle_gap_between_plates>0.0</swept_angle_gap_between_plates>
 <strike_radius>1.65</strike_radius>
-<channel_width>0.3</channel_width>
-<mass_flow_of_coolant_to_1_plate>0.2</mass_flow_of_coolant_to_1_plate>
 <input_temperature>373.15</input_temperature>
 <input_pressure>10000000</input_pressure>
 <jet_diameter>0.001</jet_diameter>
-<armour_thickness>0.001</armour_thickness>
+<number_of_carriers>3</number_of_carriers>
+<n>5 1 1 1 1 1 1 1 1 1</n>
+<m>10</m>
 </inputdata>

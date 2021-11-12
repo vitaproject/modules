@@ -113,7 +113,7 @@ def mstar_sympy(Tinput, Pinput, A, D = 0.001, t = 0.001, ks = 400, mstar = None,
                                                       (t_calc, t)]))
     return mstar, massflow, cp
 
-def taus_sympy(taus = None, mstar = None):
+def taus_sympy(cell_type, taus = None, mstar = None):
     
     """
     Non-dimensional temperature coefficient equation, may be used to calculate \
@@ -123,16 +123,34 @@ def taus_sympy(taus = None, mstar = None):
     :param float taus: Non-dimensional temperature coefficient
     """
     
-    mstar_calc, taus_calc = symbols("mstar_calc taus_calc")
+    if cell_type == "DLH":
     
-    eq = Eq((4.415 * (mstar_calc ** 0.6242)) + 0.7828, taus_calc)
-
-    if taus == None:
-        taus_calculated = solve(eq, taus_calc)
-        taus = float(taus_calculated[0].subs(mstar_calc, mstar))
+        mstar_calc, taus_calc = symbols("mstar_calc taus_calc")
+        
+        eq = Eq((4.415 * (mstar_calc ** 0.6242)) + 0.7828, taus_calc)
+    
+        if taus == None:
+            taus_calculated = solve(eq, taus_calc)
+            taus = float(taus_calculated[0].subs(mstar_calc, mstar))
+        else:
+            mstar_calculated = solve(eq, mstar_calc)
+            mstar = float(mstar_calculated[0].subs(taus_calc, taus))
+    
+    elif cell_type == "JIVC":
+        
+        mstar_calc, taus_calc = symbols("mstar_calc taus_calc")
+        
+        eq = Eq((5.83 * (mstar_calc ** 0.7648)) + 1.743, taus_calc)
+    
+        if taus == None:
+            taus_calculated = solve(eq, taus_calc)
+            taus = float(taus_calculated[0].subs(mstar_calc, mstar))
+        else:
+            mstar_calculated = solve(eq, mstar_calc)
+            mstar = float(mstar_calculated[0].subs(taus_calc, taus))
+    
     else:
-        mstar_calculated = solve(eq, mstar_calc)
-        mstar = float(mstar_calculated[0].subs(taus_calc, taus))
+        raise ValueError("Error, no cell type assigned")
     
     return taus, mstar
 
@@ -218,7 +236,7 @@ def Reynolds_sympy(density, mu, D, u = None, Re = None):
     
     return Re, u
 
-def Euler_sympy(Eu = None, Re = None):
+def Euler_sympy(cell_type, Eu = None, Re = None):
     
     """
     Euler number equation, may be used to calculate Euler number or Reynolds \
@@ -227,17 +245,32 @@ def Euler_sympy(Eu = None, Re = None):
     :param float Eu: Euler number
     :param float Re: Reynolds number
     """
+    if cell_type == "DLH":
+        Eu_calc, Re_calc = symbols("Eu_calc Re_calc")
+        
+        eq = Eq((1.486 * (Re_calc ** -0.0721)) - 0.001133, Eu_calc)
+        
+        if Eu == None:
+            Eu_calculated = solve(eq, Eu_calc)
+            Eu = float(Eu_calculated[0].subs(Re_calc, Re))
+        else:
+            Re_calculated = solve(eq, Re_calc)
+            Re = float(Re_calculated[0].subs(Eu_calc, Eu))
     
-    Eu_calc, Re_calc = symbols("Eu_calc Re_calc")
+    elif cell_type == "JIVC":
+        Eu_calc, Re_calc = symbols("Eu_calc Re_calc")
+        
+        eq = Eq(11.85 * (Re_calc ** -0.2351), Eu_calc)
+        
+        if Eu == None:
+            Eu_calculated = solve(eq, Eu_calc)
+            Eu = float(Eu_calculated[0].subs(Re_calc, Re))
+        else:
+            Re_calculated = solve(eq, Re_calc)
+            Re = float(Re_calculated[0].subs(Eu_calc, Eu))
     
-    eq = Eq((1.486 * (Re_calc ** -0.0721)) - 0.001133, Eu_calc)
-    
-    if Eu == None:
-        Eu_calculated = solve(eq, Eu_calc)
-        Eu = float(Eu_calculated[0].subs(Re_calc, Re))
     else:
-        Re_calculated = solve(eq, Re_calc)
-        Re = float(Re_calculated[0].subs(Eu_calc, Eu))
+        raise ValueError("Error, no cell type assigned")
     
     return Eu, Re
 

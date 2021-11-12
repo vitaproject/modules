@@ -1,10 +1,10 @@
 from scipy.interpolate import interp1d
-from math import sqrt, sin, cos, tan, pi
+from math import sqrt, sin, cos, tan, pi, atan
 from CHICA.utility import get_example_data_path
 import xml.etree.ElementTree as ET
 from CoolProp.CoolProp import PropsSI as SI
 from sympy import symbols
-from numpy import linspace
+from numpy import linspace, array
 from copy import deepcopy
 import time
 import matplotlib.pyplot as plt
@@ -19,7 +19,6 @@ from CHICA.flow_properties import mach_number_sympy, \
                                         taus_sympy, \
                                         massflow_nextrows
 
-
 class Material:
 
     def helium(self, input_pressure, input_temperature):
@@ -30,6 +29,32 @@ class Material:
         self.specific_heat_capacity = SI("C", "T", input_temperature, "P",
                                          input_pressure, "helium")
 
+class VJ_cell:
+
+    VJ_cell_ID = 0
+
+    def __init__(self, x, y, HFf, cross_sectional_area, specific_heat_capacity, \
+                 input_temperature, mass_flow, non_dimensional_temperature):
+
+        self.x = x
+        self.y = y
+        self.R = sqrt(x**2 * y**2)
+
+        heatflux = HFf(self.R) * cross_sectional_area
+        self.developed_coolant_temperature, self.mass_flow = \
+            coolant_temperature_sympy(heatflux, specific_heat_capacity,
+                                      input_temperature, massflow=mass_flow)
+        self.metal_temperature, self.developed_coolant_temperature = \
+            metal_temperature_sympy(input_temperature,
+                                    non_dimensional_temperature,
+                                    Tnew=self.developed_coolant_temperature)
+
+        self.VJ_cell_ID = self.identification()
+
+    @classmethod
+    def identification(cls):
+        cls.VJ_cell_ID += 1
+        return cls.VJ_cell_ID
 
 class Hexagon:
 
@@ -56,7 +81,6 @@ class Hexagon:
     def identification(cls):
         cls.hexagon_ID += 1
         return cls.hexagon_ID
-
 
 class Channel:
 
@@ -254,12 +278,12 @@ class Channel:
                            self.fluid_properties.viscosity, self.jet_diameter,
                            u=self.jet_velocity)
         self.euler_number, self.reynolds_number = \
-            Euler_sympy(Re=self.reynolds_number)
+            Euler_sympy("DLH", Re=self.reynolds_number)
         self.pressure_drop, self.euler_number, self.jet_velocity = \
             pdrop_sympy(self.fluid_properties.density, Eu=self.euler_number,
                         u=self.jet_velocity)
         self.non_dimensional_temperature, self.non_dimensional_mass_flow = \
-            taus_sympy(mstar=self.non_dimensional_mass_flow)
+            taus_sympy("DLH", mstar=self.non_dimensional_mass_flow)
 
         if flag == 1:
             self.get_hexagons(
@@ -279,12 +303,9 @@ class Channel:
 
 class Panel:
 
-    def __init__(self, input_file, heat_flux_file, mach_number,
-                 number_of_hexagons_in_first_channel, mass_split, layup_type,
-                 distribution_type):
-
-        # layup_type options: structured, HF_specific
-        # distribution_type options: inboard/outboard, strikepoint
+    def __init__(self, mach_number, input_file, heat_flux_file,
+                 number_of_hexagons_in_first_channel = None, mass_split = None, 
+                 layup_type = None, distribution_type = None, n = None, m = None):
 
         self.channels = []
         self.panel_hexagon = []
@@ -294,28 +315,25 @@ class Panel:
         self.number_of_hexagons_in_first_channel = \
             number_of_hexagons_in_first_channel
         self.mass_flow_split = mass_split
-        self.populate_hexagons()
         self.layup_type = layup_type
         self.distribution_type = distribution_type
+        self.n = n
+        self.m = m
 
-    def configure(self):
+    def __call__(self, cell_type):
 
-        # adds hexagons to middle channel and calcs flow properties
-        self.channels.append(Channel.create_first_channel(
-            self.input_data["input_pressure"],
-            self.input_data["input_temperature"], self.panel_hexagons,
-            self.HFf, self.cross_sectional_area,
-            self.number_of_hexagons_in_first_channel, self.distribution_type,
-            self.layup_type, Ma=self.mach_number))
+        self.cell_type = cell_type
 
-        self.mass_flow_total = self.channels[0].mass_flow_total
+        if self.cell_type == "DLH":       
+            self.populate_cells()
+            self.configure_hexagons()
 
-        implementation_options = {"strikepoint": self.strikepoint_injection,
-                                  "inout": self.inout_injection}
-        implementation_choice = self.distribution_type
+        elif self.cell_type == "JIVC":       
+            self.populate_cells()
+            # self.configure_squares()
 
-        run = implementation_options[implementation_choice]
-        run(self.channels[0])
+        else:
+            raise ValueError("Error, no cell type assigned")
 
     def strikepoint_injection(self, first_channel):
 
@@ -512,7 +530,10 @@ class Panel:
         trunk = tree.getroot()
 
         for root in trunk:
-            input_data[root.tag] = float(root.text)
+            try:
+                input_data[root.tag] = float(root.text)
+            except ValueError:
+                input_data[root.tag] = list(root.text.split(" "))
 
         self.input_data = input_data
 
@@ -531,126 +552,240 @@ class Panel:
             if point <= 30 * 1e6 * 0.2:
                 heatflux[index] = 30 * 1e6 * 0.2
 
-        # sbar.insert(0, self.input_data["strike_radius"] - (sbar[1] - sbar[0]))
         sbar.insert(0, sbar[0])
         sbar.insert(0, 0)
         sbar.append(self.input_data["outer_radius"])
         self.sbar = sbar
 
-        # heatflux.insert(0, 0)
-        # heatflux.insert(0, 0)
-        # heatflux.append(0)
         heatflux.insert(0, 30 * 1e6 * 0.2)
         heatflux.insert(0, 30 * 1e6 * 0.2)
         heatflux.append(30 * 1e6 * 0.2)
 
-        plt.plot(sbar, heatflux)
-        plt.xlabel("distance, cm")
-        plt.ylabel("Heat Flux, MW/m2")
+        # plt.plot(sbar, heatflux)
+        # plt.xlabel("distance, cm")
+        # plt.ylabel("Heat Flux, MW/m2")
 
         self.HFf = interp1d(sbar, heatflux)
-
-    def populate_hexagons(self):
-
-        cp = []  # a list for assigning centre points of hexagon array, (x, y)
-        cp_remove = []  # list of values to remove from cp as are out of bounds
-        hcp_final = []  # list of remaining central points
-        hcp_ID = []  # a list of the matrix ID's left after removing out of
-        # bounds points
-        hcp_final_y = []
-        hcp_final_y_mirror = []
-
-        hexagon_height = \
-            self.input_data["hexagon_width"] / 2 * tan(60 * pi / 180)
-        theta = (360.0 / self.input_data["number_of_plates"] / 2 -
-                 self.input_data["swept_angle_gap_between_plates"]) * pi / 180
-
-        point_x1 = self.input_data["inner_radius"]*cos(theta)
-        point_y1 = self.input_data["inner_radius"]*sin(theta)
-        line_angle = tan(theta)
-
-        topy = self.input_data["outer_radius"] * sin(theta)
-        no_points_y = int(round((topy/hexagon_height), 0))
+    
+    def hexagon_starter(self, cp, point_x1, line_angle, topy):
+        
+        width = self.input_data["width"]
+        height = width / 2 * tan(60 * pi / 180)
+        
+        no_points_y = int(round(topy/height, 0))
         no_points_x = int(round(((self.input_data["outer_radius"]-point_x1) /
-                                 (1.5*self.input_data["hexagon_width"])), 0))
+                                 (1.5*width)), 0))
 
-        a = self.input_data["hexagon_width"]/2
+        a = width/2
         self.cross_sectional_area = (3 * sqrt(3) / 2) * a ** 2
 
         for i in range(no_points_x):
             for j in range(no_points_y):
-                cp.append([i*1.5*self.input_data["hexagon_width"] + point_x1,
-                           j*hexagon_height])
-                cp.append([i*1.5*self.input_data["hexagon_width"] +
-                           0.75*self.input_data["hexagon_width"] +
-                           point_x1, j*hexagon_height + 0.5*hexagon_height])
+                cp.append([i*1.5*width + point_x1, j*height])
+                cp.append([i*1.5*width + 0.75*width + point_x1, 
+                           j*height + 0.5*height])
+        
+        return cp, height, width
 
-        x, y, r = symbols("x y r")
-        topy = (line_angle * (x-point_x1)) + point_y1
-        arc = ((r**2 - ((y-self.input_data["y_displacement_from_origin"])**2))
-               ** 0.5) + self.input_data["x_displacement_from_origin"]
+    def squares_starter(self, cp, point_x1, line_angle, topy):
+        
+        height = self.input_data["height"]
+        width = self.input_data["width"]
+        self.cross_sectional_area = height * width
+        
+        no_points_y = int(round(topy/height, 0))
+        no_points_x = int(round((self.input_data["outer_radius"]-point_x1) /
+                                 (width), 0))
 
-        for i, coordinates in enumerate(cp):
+        for i in range(no_points_x):
+            for j in range(no_points_y):
+                cp.append([i*width + point_x1, j*height])
+                
+        return cp, width, height
 
-            if topy.subs([(x, coordinates[0])]) <= coordinates[1]:
+    def configure_hexagons(self):
+
+        # adds hexagons to middle channel and calcs flow properties
+        self.channels.append(Channel.create_first_channel(
+            self.input_data["input_pressure"],
+            self.input_data["input_temperature"], self.panel_hexagons,
+            self.HFf, self.cross_sectional_area,
+            self.number_of_hexagons_in_first_channel, self.distribution_type,
+            self.layup_type, Ma=self.mach_number))
+
+        self.mass_flow_total = self.channels[0].mass_flow_total
+
+        implementation_options = {"strikepoint": self.strikepoint_injection,
+                                  "inout": self.inout_injection}
+        implementation_choice = self.distribution_type
+
+        run = implementation_options[implementation_choice]
+        run(self.channels[0])
+
+    def configure_squares(self):
+
+        # calculate mass flows
+        first_channel = [i for i in self.panel_hexagons if i[5] <= self.rset[1]]
+        Ma, u = mach_number_sympy(373.15, Ma = 0.1)
+        mass_flow, u, Ajet, density, D = mass_flow_sympy(373.15, 100E5, u = u)
+        total_mass_flow_to_system = mass_flow * len(first_channel)
+
+        input_pressure = self.input_data["input_pressure"]
+        input_temperature = self.input_data["input_temperature"]
+        self.fluid_properties = Material()
+        self.fluid_properties.helium(input_pressure, input_temperature)
+
+        non_dimensional_mass_flow, mass_flow, \
+            self.fluid_properties.specific_heat_capacity = \
+            mstar_sympy(input_temperature, input_pressure,
+                        self.cross_sectional_area, massflow=mass_flow)
+        reynolds_number, u = \
+            Reynolds_sympy(self.fluid_properties.density,
+                           self.fluid_properties.viscosity, D, u=u)
+        euler_number, reynolds_number = Euler_sympy("JIVC", Re=reynolds_number)
+        pressure_drop, euler_number, jet_velocity = \
+            pdrop_sympy(self.fluid_properties.density, Eu=euler_number,
+                        u=u)
+        non_dimensional_temperature, non_dimensional_mass_flow = \
+            taus_sympy("JIVC", mstar=non_dimensional_mass_flow)
+
+    def bounding_box(self, first_radius, second_radius, cp_final_y, rotation_theta_set, split_theta):
+
+        cp = []  # a list for assigning centre points of hexagon array, (x, y)
+        cp_remove = []  # list of values to remove from cp as are out of bounds
+        cp_final = []  # list of remaining central points
+        cpsets = []
+
+        point_x1 = first_radius*cos(split_theta)
+        point_y1 = first_radius*sin(split_theta)
+        line_angle = tan(split_theta)
+        topy = second_radius * sin(split_theta)
+
+        cell_type_options = {"DLH":self.hexagon_starter, \
+                             "JIVC":self.squares_starter}
+
+        cell_type_selection = cell_type_options[self.cell_type]
+        cp, width, height = cell_type_selection(cp, point_x1, line_angle, topy)
+
+        topy = lambda x, x1 = point_x1, y1 = point_y1, m = line_angle: m * (x - x1) + y1
+        arc = lambda r, y, y_dis = self.input_data["y_displacement_from_origin"], \
+                x_dis = self.input_data["x_displacement_from_origin"]: \
+                    ((r**2 - ((y-y_dis)**2)) ** 0.5) + x_dis
+
+        for coordinates in cp:
+
+            if topy(coordinates[0]) <= coordinates[1]:
                 cp_remove.append(coordinates)
 
-            # inner arc
+            # - inner arc
             try:
-                float(arc.subs([(r, self.input_data["inner_radius"]),
-                                (y, coordinates[1])]))
+                arc(first_radius, coordinates[1])
             except:
                 None
             else:
-                if arc.subs([(r, self.input_data["inner_radius"]),
-                             (y, coordinates[1])]) >= coordinates[0]:
+                if arc(first_radius, coordinates[1]) >= coordinates[0]:
                     cp_remove.append(coordinates)
 
-            # outer arc
+            # - outer arc
             try:
-                float(arc.subs([(r, self.input_data["outer_radius"]),
-                                (y, coordinates[1])]))
+                arc(second_radius, coordinates[1])
             except:
                 None
             else:
-                if arc.subs([(r, self.input_data["outer_radius"]),
-                             (y, coordinates[1])]) <= coordinates[0]:
+                if arc(second_radius, coordinates[1]) <= coordinates[0]:
                     cp_remove.append(coordinates)
+
+        # - remove centre points from cp_final list and copy about 0
 
         for i in cp:
             if i not in cp_remove:
-                hcp_final.append(i)
+                cp_final.append([i[0], 0, i[1], sqrt(i[0]**2 + i[1]**2), atan(i[1]/i[0])])
+                if cp_final[-1][2] == 0:
+                    pass
+                else:
+                    cp_final.append([i[0], 0, -i[1], sqrt(i[0]**2 + i[1]**2), atan(-i[1]/i[0])])
 
-        # ---- create centre points for triangles ---- #
+        # - counting the number of slabs
 
-        for i in hcp_final:
-            hcp_ID.append(
-                [i[0] / self.input_data["hexagon_width"] - hcp_final[0][0] /
-                 self.input_data["hexagon_width"], 0, i[1] / hexagon_height])
-            hcp_final_y.append([i[0], 0, i[1]])
-
-        for i in hcp_final_y:
+        count = 0
+        count1 = 0
+        count2 = 0
+        for i in cp_final:
             if i[2] == 0:
-                None
-            else:
-                hcp_final_y_mirror.append([i[0], 0, -i[2]])
+                count += 1
 
-        for i in hcp_final_y_mirror:
-            hcp_final_y.append(i)
+        for i in cp_final:
+            if i[0] == cp_final[-1][0]:
+                count1 += 1
+            if i[0] == cp_final[0][0]:
+                count2 += 1
+        self.n_slabs = (count1 + count2) / 2.0
+        self.n_jets_per_slab = count
+        # print([(count1 + count2) / 2.0, count, count1, count2])
 
-        for i, value in enumerate(hcp_final_y):
-            hcp_final_y[i].append(
-                sqrt((sqrt(value[0]**2 + value[2]**2) - self.sbar[2])**2))
-            # distance from strikepoint, absolute
-            hcp_final_y[i].append(
-                sqrt(value[0]**2 + value[2]**2) - self.sbar[2])
-            # distance from strikepoint, direction dependant
-            hcp_final_y[i].append(
-                sqrt(value[0]**2 + value[2]**2))
-            # absolute radius
+        # - 
+
+        for i in rotation_theta_set:
+            cpsets.append(array(deepcopy(cp_final)))
+
+        cp_final = []
         
-        self.panel_hexagons = hcp_final_y
+        for i, cpset in enumerate(cpsets):
+            for x, y, z, R, theta in cpset:
+                cp_final.append([R * cos(rotation_theta_set[i] + theta), \
+                                 y, \
+                                 R * sin(rotation_theta_set[i] + theta), \
+                                 sqrt((sqrt(x**2 + z**2) - self.sbar[2])**2), \
+                                 sqrt(x**2 + z**2) - self.sbar[2], \
+                                 sqrt(x**2 + z**2), \
+                                 atan(z/x)])
 
+        for i in cp_final:
+            cp_final_y.append(deepcopy(i))
+
+        return cp_final_y
+
+    def populate_cells(self):
+
+        # - centre point definitions, same for both codes
+
+        cp_final_y = []
+        rotation_set = []
+        theta_set = []
+
+        # - allows for a an m value of 1
+    
+        # try:
+        #     n = array([int(ni) for ni in self.input_data["n"]])
+        # except TypeError:
+        #     n = array([int(self.input_data["n"])])
+        # m = int(self.input_data["m"])
+        
+        if len(self.n) != self.m:
+            # print([len(n), m])
+            raise Exception(""" the number of radial slices is not equal to the number of provided lateral slices """)
+
+        self.rset = linspace(self.input_data["inner_radius"], \
+                        self.input_data["outer_radius"], \
+                        self.m+1)
+        rset = self.rset
+        # print(rset)
+        theta_set = ((((360.0 / (self.input_data["number_of_plates"] * self.n * \
+                    self.input_data["number_of_carriers"])) / 2) - \
+                    (self.input_data["swept_angle_gap_between_plates"]/2)) * \
+                    pi / 180)
+
+        for i, ni in enumerate(self.n):
+
+            rotation_set.append(theta_set[i] * ni * 2 * linspace((ni-1)*(1/(2*ni)), - (ni-1)*(1/(2*ni)), ni))
+
+        for i, r in enumerate(rset):
+            if len(rset) - 1 == i:
+                break
+            else:
+                cp_final_y = self.bounding_box(r, rset[i+1], cp_final_y, rotation_set[i], theta_set[i])
+
+        self.panel_hexagons = cp_final_y
 
 if __name__ == "__main__":
     start_time = time.time()
@@ -677,22 +812,29 @@ if __name__ == "__main__":
                             str(layup) + "_" + \
                             str(distribution)
 
-                        panel = Panel("inputs.xml", "q_adjusted.asc",
-                                      float(mach_number),
-                                      int(number_of_hexagons),
-                                      float(mass_split), layup, distribution)
-                        panel.configure()
+                        panel = Panel(float(mach_number), "inputs.xml", "q_adjusted.asc",
+                                      number_of_hexagons_in_first_channel = int(number_of_hexagons), 
+                                      mass_split = float(mass_split), layup_type = layup, 
+                                      distribution_type = distribution, n = 1, m = 1) # n, m = 1 for DLH
+                        panel("JIVC")
 
                         results[key] = panel
 
     keys = results.keys()
 
+    # f = open("hexagon_centre_points.asc", "w")
+    # for key in keys:
+    #     for channel in results[key].channels:
+    #         for hexagon in channel.hexagons:
+    #             f.write(str(hexagon.x) + "\t" + "0" + "\t" + str(hexagon.y))
+    #             f.write("\n")
+    # f.close()
+
     f = open("hexagon_centre_points.asc", "w")
     for key in keys:
-        for channel in results[key].channels:
-            for hexagon in channel.hexagons:
-                f.write(str(hexagon.x) + "\t" + "0" + "\t" + str(hexagon.y))
-                f.write("\n")
+        for hexagon in results[key].panel_hexagons:
+            f.write(str(hexagon[0]) + "\t" + "0" + "\t" + str(hexagon[2]))
+            f.write("\n")
     f.close()
 
     f = open("hexagon_data.asc", "w")
