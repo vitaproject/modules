@@ -303,9 +303,9 @@ class Channel:
 
 class Panel:
 
-    def __init__(self, input_file, heat_flux_file, mach_number,
-                 number_of_hexagons_in_first_channel, mass_split, layup_type,
-                 distribution_type):
+    def __init__(self, mach_number, input_file, heat_flux_file,
+                 number_of_hexagons_in_first_channel = None, mass_split = None, 
+                 layup_type = None, distribution_type = None, n = None, m = None):
 
         self.channels = []
         self.panel_hexagon = []
@@ -317,6 +317,8 @@ class Panel:
         self.mass_flow_split = mass_split
         self.layup_type = layup_type
         self.distribution_type = distribution_type
+        self.n = n
+        self.m = m
 
     def __call__(self, cell_type):
 
@@ -328,7 +330,7 @@ class Panel:
 
         elif self.cell_type == "JIVC":       
             self.populate_cells()
-            self.configure_squares()
+            # self.configure_squares()
 
         else:
             raise ValueError("Error, no cell type assigned")
@@ -559,9 +561,9 @@ class Panel:
         heatflux.insert(0, 30 * 1e6 * 0.2)
         heatflux.append(30 * 1e6 * 0.2)
 
-        plt.plot(sbar, heatflux)
-        plt.xlabel("distance, cm")
-        plt.ylabel("Heat Flux, MW/m2")
+        # plt.plot(sbar, heatflux)
+        # plt.xlabel("distance, cm")
+        # plt.ylabel("Heat Flux, MW/m2")
 
         self.HFf = interp1d(sbar, heatflux)
     
@@ -624,16 +626,28 @@ class Panel:
 
         # calculate mass flows
         first_channel = [i for i in self.panel_hexagons if i[5] <= self.rset[1]]
-        Ma, u = mach_number_sympy(373.15, Ma = 0.3)
+        Ma, u = mach_number_sympy(373.15, Ma = 0.1)
         mass_flow, u, Ajet, density, D = mass_flow_sympy(373.15, 100E5, u = u)
         total_mass_flow_to_system = mass_flow * len(first_channel)
-        print(total_mass_flow_to_system)
 
-        last_channel = [i for i in self.panel_hexagons if i[5] >= self.rset[-2]]
-        mass_flow = total_mass_flow_to_system / len(last_channel)
-        mass_flow, u, Ajet, density, D = mass_flow_sympy(373.15, 100E5, massflow = mass_flow)
-        Ma, u = mach_number_sympy(373.15, u = u)
-        print([mass_flow, u, Ma])
+        input_pressure = self.input_data["input_pressure"]
+        input_temperature = self.input_data["input_temperature"]
+        self.fluid_properties = Material()
+        self.fluid_properties.helium(input_pressure, input_temperature)
+
+        non_dimensional_mass_flow, mass_flow, \
+            self.fluid_properties.specific_heat_capacity = \
+            mstar_sympy(input_temperature, input_pressure,
+                        self.cross_sectional_area, massflow=mass_flow)
+        reynolds_number, u = \
+            Reynolds_sympy(self.fluid_properties.density,
+                           self.fluid_properties.viscosity, D, u=u)
+        euler_number, reynolds_number = Euler_sympy("JIVC", Re=reynolds_number)
+        pressure_drop, euler_number, jet_velocity = \
+            pdrop_sympy(self.fluid_properties.density, Eu=euler_number,
+                        u=u)
+        non_dimensional_temperature, non_dimensional_mass_flow = \
+            taus_sympy("JIVC", mstar=non_dimensional_mass_flow)
 
     def bounding_box(self, first_radius, second_radius, cp_final_y, rotation_theta_set, split_theta):
 
@@ -663,7 +677,7 @@ class Panel:
             if topy(coordinates[0]) <= coordinates[1]:
                 cp_remove.append(coordinates)
 
-            # inner arc
+            # - inner arc
             try:
                 arc(first_radius, coordinates[1])
             except:
@@ -672,7 +686,7 @@ class Panel:
                 if arc(first_radius, coordinates[1]) >= coordinates[0]:
                     cp_remove.append(coordinates)
 
-            # outer arc
+            # - outer arc
             try:
                 arc(second_radius, coordinates[1])
             except:
@@ -681,7 +695,7 @@ class Panel:
                 if arc(second_radius, coordinates[1]) <= coordinates[0]:
                     cp_remove.append(coordinates)
 
-        # remove centre points from cp_final list and copy about 0
+        # - remove centre points from cp_final list and copy about 0
 
         for i in cp:
             if i not in cp_remove:
@@ -690,6 +704,26 @@ class Panel:
                     pass
                 else:
                     cp_final.append([i[0], 0, -i[1], sqrt(i[0]**2 + i[1]**2), atan(-i[1]/i[0])])
+
+        # - counting the number of slabs
+
+        count = 0
+        count1 = 0
+        count2 = 0
+        for i in cp_final:
+            if i[2] == 0:
+                count += 1
+
+        for i in cp_final:
+            if i[0] == cp_final[-1][0]:
+                count1 += 1
+            if i[0] == cp_final[0][0]:
+                count2 += 1
+        self.n_slabs = (count1 + count2) / 2.0
+        self.n_jets_per_slab = count
+        # print([(count1 + count2) / 2.0, count, count1, count2])
+
+        # - 
 
         for i in rotation_theta_set:
             cpsets.append(array(deepcopy(cp_final)))
@@ -719,24 +753,29 @@ class Panel:
         rotation_set = []
         theta_set = []
 
-        n = array([int(ni) for ni in self.input_data["n"]])
-        m = int(self.input_data["m"])
+        # - allows for a an m value of 1
+    
+        # try:
+        #     n = array([int(ni) for ni in self.input_data["n"]])
+        # except TypeError:
+        #     n = array([int(self.input_data["n"])])
+        # m = int(self.input_data["m"])
         
-        if len(n) != m:
-            print([len(n), m])
+        if len(self.n) != self.m:
+            # print([len(n), m])
             raise Exception(""" the number of radial slices is not equal to the number of provided lateral slices """)
 
         self.rset = linspace(self.input_data["inner_radius"], \
                         self.input_data["outer_radius"], \
-                        m+1)
+                        self.m+1)
         rset = self.rset
-        print(rset)
-        theta_set = ((((360.0 / (self.input_data["number_of_plates"] * n * \
+        # print(rset)
+        theta_set = ((((360.0 / (self.input_data["number_of_plates"] * self.n * \
                     self.input_data["number_of_carriers"])) / 2) - \
                     (self.input_data["swept_angle_gap_between_plates"]/2)) * \
                     pi / 180)
 
-        for i, ni in enumerate(n):
+        for i, ni in enumerate(self.n):
 
             rotation_set.append(theta_set[i] * ni * 2 * linspace((ni-1)*(1/(2*ni)), - (ni-1)*(1/(2*ni)), ni))
 
@@ -773,10 +812,10 @@ if __name__ == "__main__":
                             str(layup) + "_" + \
                             str(distribution)
 
-                        panel = Panel("inputs.xml", "q_adjusted.asc",
-                                      float(mach_number),
-                                      int(number_of_hexagons),
-                                      float(mass_split), layup, distribution)
+                        panel = Panel(float(mach_number), "inputs.xml", "q_adjusted.asc",
+                                      number_of_hexagons_in_first_channel = int(number_of_hexagons), 
+                                      mass_split = float(mass_split), layup_type = layup, 
+                                      distribution_type = distribution, n = 1, m = 1) # n, m = 1 for DLH
                         panel("JIVC")
 
                         results[key] = panel

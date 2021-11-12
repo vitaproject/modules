@@ -13,6 +13,6 @@
 <input_pressure>10000000</input_pressure>
 <jet_diameter>0.001</jet_diameter>
 <number_of_carriers>3</number_of_carriers>
-<n>1 1 1 1</n>
-<m>4</m>
+<n>5 1 1 1 1 1 1 1 1 1</n>
+<m>10</m>
 </inputdata>
