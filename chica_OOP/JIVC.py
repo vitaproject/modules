@@ -12,7 +12,7 @@ columns of JIVC-packs on the cassette.
 """
 
 from pandas import DataFrame, concat
-from numpy import pi, sqrt, linspace, array
+from numpy import pi, sqrt, linspace, array, meshgrid
 from CoolProp.CoolProp import PropsSI as SI
 from main import Panel
 import matplotlib.pyplot as plt
@@ -34,7 +34,7 @@ class JIVC_manifold():
     R = 8.3145
     M = 4.003E-3
     gamma = 1.667
-    range_of_multipliers = array(linspace(1, 5, 9))
+    range_of_multipliers = array(linspace(7.5, 10, 6))
     speed_of_sound = sqrt(gamma * 373.15 * R / M)
 
     def __init__(self, Ma, n, m):
@@ -80,6 +80,11 @@ class JIVC_manifold():
         self.diameters = DataFrame(Din_range)
         self.mach = DataFrame(mach_range)
 
+    def pipe_diameters(self, diameter_set, n_set):
+
+        merged = concat(diameter_set)
+        self.radial_lengths = array(list(zip(*n_set))[0]) * merged[0][0]
+
     def manager(self):
         self.create_panel()
         self.repeated_operations()
@@ -93,9 +98,9 @@ if __name__ == "__main__":
     n_list = []
     m_list = []
 
-    m = linspace(5, 10, 6, dtype = int)
-    n = linspace(5, 10, 6, dtype = int)
-    Ma = linspace(0.3, 0.3, 1)
+    m = linspace(1, 10, 10, dtype = int)
+    n = linspace(1, 10, 10, dtype = int)
+    Ma = linspace(0.2, 0.3, 1)
     labels = ["n = %s, m = %s" % (ni, mi) for ni in n for mi in m]
     n_list = [array(linspace(nx, nx, mx, dtype = int)) for ni, nx in enumerate(n) \
               for mi, mx in enumerate(m)]
@@ -104,10 +109,10 @@ if __name__ == "__main__":
     # - initialise storage
 
     for mi, mx in enumerate(m_list):
-    
+
         diameter_subset = DataFrame()
         mach_subset = DataFrame()
-    
+
         for Mai in Ma:
 
             test = JIVC_manifold(Mai, n_list[mi], mx)
@@ -118,6 +123,15 @@ if __name__ == "__main__":
         Diameter_master.append(diameter_subset)
         Mach_master.append(mach_subset)
 
+    test.pipe_diameters(Diameter_master, n_list)
+    test.radial_lengths
+
+    Nlist, Mlist = meshgrid(array(list(zip(*n_list))[0]), m_list)
+
+    fig = plt.figure()
+    ax = plt.axes(projection = "3d")
     for index, diameter_set in enumerate(Diameter_master):
-        plt.scatter(Mach_master[index][0], diameter_set[0], cmap = index, label = labels[index])
-    plt.legend()
+        ax.scatter3D(Nlist, Mlist, test.radial_lengths) # , cmap = index, label = labels[index])
+    # plt.legend()
+    # plt.xlabel("mach number")
+    # plt.ylabel("radial length [m]")

@@ -53,7 +53,7 @@ def mass_flow_sympy(Ti, Pi, D = 0.001, massflow = None, u = None):
     """
     
     density = SI("D", "T", Ti, "P", Pi, "helium")
-    Ajet = pi * ((D/2)**2)
+    Ajet = pi * ((D/2)**2) # < - group of inlets in an inlet
     
     roe, u_calc, massflow_calc, Ajet_calc = \
         symbols("roe u_calc massflow_calc Ajet_calc")
@@ -72,7 +72,7 @@ def mass_flow_sympy(Ti, Pi, D = 0.001, massflow = None, u = None):
                                         (Ajet_calc, Ajet)]))
     return massflow, u, Ajet, density, D
 
-def mstar_sympy(Tinput, Pinput, A, D = 0.001, t = 0.001, ks = 400, mstar = None, massflow = None):
+def mstar_sympy(Tinput, Pinput, A, D = 0.001, t = 0.001, ks = 340, mstar = None, massflow = None):
     
     """
     Non-dimensional mass flow equation, may be used to calculate \
@@ -154,30 +154,21 @@ def taus_sympy(cell_type, taus = None, mstar = None):
     
     return taus, mstar
 
-def metal_temperature_sympy(Tinput, taus, Tnew = None, Tpeak = None):
+def metal_temperature_sympy(Tinput, taus, mass_flow, Q, Cp):
 
     """
-    Armour tile temperature equation, may be used to calculate Armour tile \
-        temperature or developed coolant temperature
-    
+    heat sink surface temperature equation, may be used to calculate heat sink\
+        surface temperature or developed coolant temperature
+
     :param float Tinput: Inlet coolant temperature
     :param float taus: Non-dimensional temperature coefficient
     :param float Tnew: Developed coolant temperature
-    :param float Tpeak: Peak temperature of the armour tile
+    :param float Tpeak: Peak temperature of the heat sink surface
     """
-    
-    Tnew_calc, Tpeak_calc = symbols("Tnew_calc Tpeak_calc")
-    
-    eq = Eq((taus * (Tnew_calc - Tinput)) + Tinput, Tpeak_calc)
-    
-    if Tnew == None:
-        Tnew_calculated = solve(eq, Tnew_calc)
-        Tnew = float(Tnew_calculated[0].subs(Tpeak_calc, Tpeak))
-    else:
-        Tpeak_calculated = solve(eq, Tpeak_calc)
-        Tpeak = float(Tpeak_calculated[0].subs(Tnew_calc, Tnew))
-    
-    return Tpeak, Tnew
+
+    Tpeak = ((taus * Q) / (mass_flow * Cp)) + Tinput
+
+    return Tpeak
 
 def pdrop_sympy(density, Eu = None, u = None, delta_p = None):
     
@@ -274,33 +265,20 @@ def Euler_sympy(cell_type, Eu = None, Re = None):
     
     return Eu, Re
 
-def coolant_temperature_sympy(HFi, cp, Ti, massflow = None, Tnew = None):
+def coolant_temperature_sympy(taus, Tinput, metal_temperature):
     
     """
     Developed coolant temperature equation, may be used to calculate the \
         developed coolant temperature or mass flow
     
-    :param float HFi: Heat flux
-    :param float cp: Coolant specific heat capacity
-    :param float Ti: Coolant Temperature
-    :param float massflow: Coolant mass flow
-    :param float Tnew: Developed coolant temperature
+    :param float 
     """
-    
-    Tnew_calc, massflow_calc = symbols("Tnew_calc massflow_calc")
-    
-    eq = Eq(Ti + HFi/(massflow_calc * cp), Tnew_calc)
-    
-    if Tnew == None:
-        Tnew_calculated = solve(eq, Tnew_calc)
-        Tnew = float(Tnew_calculated[0].subs(massflow_calc, massflow))
-    else:
-        massflow_calculated = solve(eq, massflow_calc)
-        massflow = float(massflow_calculated[0].subs(Tnew_calc, Tnew))
-    
-    return Tnew, massflow
 
-def massflow_nextrows(coordinates, massflow, cp, Ahex, Tpeak, Tinput, HFf, massflow_actual, t = 0.001, ks = 400):
+    Tnew = Tinput + ((metal_temperature - Tinput) / taus)
+    
+    return Tnew
+
+def massflow_nextrows(coordinates, massflow, cp, Ahex, Tpeak, Tinput, HFf, massflow_actual, t = 0.001, ks = 340):
     
     """
     Mass flow per hexagon equation for rows beyond the first row, may be used \

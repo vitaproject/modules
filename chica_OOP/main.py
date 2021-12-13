@@ -1,11 +1,13 @@
 from scipy.interpolate import interp1d
 from math import sqrt, sin, cos, tan, pi, atan
 from CHICA.utility import get_example_data_path
-import xml.etree.ElementTree as ET
 from CoolProp.CoolProp import PropsSI as SI
-from sympy import symbols
-from numpy import linspace, array
+from numpy import linspace, array, average
+from numpy import concatenate as concat
+from pandas import DataFrame
 from copy import deepcopy
+from os import mkdir
+import xml.etree.ElementTree as ET
 import time
 import matplotlib.pyplot as plt
 from CHICA.flow_properties import mach_number_sympy, \
@@ -38,18 +40,25 @@ class VJ_cell:
 
         self.x = x
         self.y = y
-        self.R = sqrt(x**2 * y**2)
-
+        self.R = sqrt(x**2 + y**2)
         heatflux = HFf(self.R) * cross_sectional_area
-        self.developed_coolant_temperature, self.mass_flow = \
-            coolant_temperature_sympy(heatflux, specific_heat_capacity,
-                                      input_temperature, massflow=mass_flow)
-        self.metal_temperature, self.developed_coolant_temperature = \
-            metal_temperature_sympy(input_temperature,
-                                    non_dimensional_temperature,
-                                    Tnew=self.developed_coolant_temperature)
+
+        self.metal_temperature = metal_temperature_sympy(input_temperature,
+                                    non_dimensional_temperature, mass_flow,
+                                    heatflux, specific_heat_capacity)
+
+        self.developed_coolant_temperature = \
+            coolant_temperature_sympy(non_dimensional_temperature,
+                                      input_temperature, self.metal_temperature)
 
         self.VJ_cell_ID = self.identification()
+
+        # store variables, heavy handed as on channel created yet
+        self.taus = non_dimensional_temperature
+        self.heatflux = heatflux
+        self.input_temperature = input_temperature
+        self.mass_flow = mass_flow
+        self.Cp = specific_heat_capacity
 
     @classmethod
     def identification(cls):
@@ -68,13 +77,15 @@ class Hexagon:
         self.y = hexagon_data[2]
         self.R = sqrt((self.x**2) + (self.y**2))
         heatflux = HFf(self.R) * cross_sectional_area
-        self.developed_coolant_temperature, self.mass_flow = \
-            coolant_temperature_sympy(heatflux, specific_heat_capacity,
-                                      input_temperature, massflow=mass_flow)
-        self.metal_temperature, self.developed_coolant_temperature = \
-            metal_temperature_sympy(input_temperature,
-                                    non_dimensional_temperature,
-                                    Tnew=self.developed_coolant_temperature)
+        
+        self.metal_temperature = metal_temperature_sympy(input_temperature,
+                                    non_dimensional_temperature, mass_flow,
+                                    heatflux, specific_heat_capacity)
+
+        self.developed_coolant_temperature = \
+            coolant_temperature_sympy(non_dimensional_temperature,
+                                      input_temperature, self.metal_temperature)
+
         self.hexagon_ID = self.identification()
 
     @classmethod
@@ -84,8 +95,8 @@ class Hexagon:
 
 class Channel:
 
-    def __init__(self, input_pressure, input_temperature, panel_hexagons,
-                 HFf, cross_sectional_area, Ma=0.0):
+    def __init__(self, input_pressure, input_temperature, HFf, \
+                 cross_sectional_area, Ma=0.0, panel_hexagons = None):
 
         # panel level properties i.e. only get assigned/changed at this level
         self.panel_hexagons = panel_hexagons  # needs to be accessed at hexagon
@@ -159,7 +170,7 @@ class Channel:
 
         obj.mass_flow_total = number_of_hexagons * obj.mass_flow
 
-        obj.repeated_operations()
+        obj.repeated_operations_hexagons()
 
         if distribution_type == "strikepoint":
             reordered_hexagons = sorted(
@@ -207,7 +218,7 @@ class Channel:
             obj.input_temperature, obj.HFf, mass_flow_actual)
 
         remainging_hexagons, obj.break_flag = \
-            obj.repeated_operations(1, remaining_hexagons, mass_flow_actual)
+            obj.repeated_operations_hexagons(1, remaining_hexagons, mass_flow_actual)
 
         obj.max_temperature = previous_channel.max_temperature
 
@@ -233,14 +244,58 @@ class Channel:
             obj.number_of_hexagons_required = specified_number_of_hexagons
 
         remainging_hexagons, obj.break_flag = \
-            obj.repeated_operations(1, remaining_hexagons, mass_flow_actual)
+            obj.repeated_operations_hexagons(1, remaining_hexagons, mass_flow_actual)
 
         obj.max_temperature = \
             max([hexagon.metal_temperature for hexagon in obj.hexagons])
 
         return obj
 
-    def repeated_operations(self, flag=None, remaining_hexagons=None,
+    def repeated_operations_squares(self, assessment_set, n, mi, peak_metal_temperature, \
+        input_pressure, input_temperature, mass_flow_total, HFf, cross_sectional_area):
+        
+        cell_temperatures = []
+        VJ_cells = []
+        
+        fluid_properties = Material()
+        fluid_properties.helium(input_pressure, input_temperature)
+        
+        assessment_set_total_mass_flow = mass_flow_total / n
+        jet_mass_flow = assessment_set_total_mass_flow / len(assessment_set)
+        
+        jet_mass_flow, jet_velocity, Ajet, density, jet_diameter \
+            = mass_flow_sympy(input_temperature, input_pressure, massflow = jet_mass_flow)
+        
+        Reynolds_number, jet_velocity = Reynolds_sympy(density, fluid_properties.viscosity, jet_diameter, \
+                       u = jet_velocity)
+        
+        Euler_number, Reynolds_number = Euler_sympy("JIVC", Re = Reynolds_number)
+        
+        pressure_drop, Euler_number, jet_velocity = \
+            pdrop_sympy(density, Eu = Euler_number, u = jet_velocity)
+        
+        mstar, jet_mass_flow, specific_heat_capacity = mstar_sympy(\
+            input_temperature, input_pressure, cross_sectional_area, massflow = jet_mass_flow)
+        
+        taus, mstar = taus_sympy("JIVC", mstar = mstar)
+        
+        mach_number, jet_velocity = mach_number_sympy(input_temperature, \
+            u = jet_velocity)
+        
+        for cell in assessment_set:
+            VJ_cell_i = VJ_cell(cell[0], cell[2], HFf, cross_sectional_area, 
+                fluid_properties.specific_heat_capacity, \
+                input_temperature, jet_mass_flow, taus)
+            VJ_cells.append(VJ_cell_i)
+            cell_temperatures.append(VJ_cell_i.developed_coolant_temperature)
+            if peak_metal_temperature <= VJ_cell_i.metal_temperature:
+                peak_metal_temperature = VJ_cell_i.metal_temperature
+        
+        new_input_temperature = average(cell_temperatures)
+        
+        return pressure_drop, new_input_temperature, mach_number, peak_metal_temperature, VJ_cells
+
+    def repeated_operations_hexagons(self, flag=None, remaining_hexagons=None,
                             mass_flow_actual=None):
 
         if flag == 1:
@@ -257,8 +312,7 @@ class Channel:
 
             else:
                 self.number_of_hexagons_required = len(remaining_hexagons)
-                self.mass_flow = \
-                    mass_flow_actual / self.number_of_hexagons_required
+                self.mass_flow = mass_flow_actual / self.number_of_hexagons_required
 
             self.mass_flow, self.jet_velocity, self.jet_cross_sectional_area, \
                 self.fluid_properties.density, self.jet_diameter = \
@@ -300,12 +354,12 @@ class Channel:
 
             return remaining_hexagons, self.break_flag
 
-
 class Panel:
 
     def __init__(self, mach_number, input_file, heat_flux_file,
                  number_of_hexagons_in_first_channel = None, mass_split = None, 
-                 layup_type = None, distribution_type = None, n = None, m = None):
+                 layup_type = None, distribution_type = None, n = None, m1 = None, \
+                 m2 = None, mass_flow_total = None, centre_channel_half_width = None):
 
         self.channels = []
         self.panel_hexagon = []
@@ -318,7 +372,10 @@ class Panel:
         self.layup_type = layup_type
         self.distribution_type = distribution_type
         self.n = n
-        self.m = m
+        self.m1 = m1
+        self.m2 = m2
+        self.mass_flow_total = mass_flow_total
+        self.half_width = centre_channel_half_width
 
     def __call__(self, cell_type):
 
@@ -326,11 +383,11 @@ class Panel:
 
         if self.cell_type == "DLH":       
             self.populate_cells()
-            self.configure_hexagons()
+            # self.configure_hexagons()
 
         elif self.cell_type == "JIVC":       
             self.populate_cells()
-            # self.configure_squares()
+            self.configure_squares()
 
         else:
             raise ValueError("Error, no cell type assigned")
@@ -466,7 +523,7 @@ class Panel:
                         break
 
             new_channels[0].reverse()
-            self.populate_hexagons()
+            self.populate_cells()
 
             self.layup_type = "structured"
 
@@ -543,56 +600,55 @@ class Panel:
         with open(heatflux_data) as geometry:
             for line in geometry:
                 heatflux = line.split()
-                s.append(float(heatflux[0]) / 100.0)  # converting to m from mm, is this correct, might be cm
+                s.append(float(heatflux[0]) / 100.0)  # converting to m from cm
                 q.append(float(heatflux[1])) # / 6.87) * 30.0)
 
         sbar = [i + self.input_data["strike_radius"] for i in s]
-        heatflux = [i * 1e6 for i in q]
+        heatflux = [(i/q[0] * self.input_data["HF_peak"]) * 1e6 for i in q]
         for index, point in enumerate(heatflux):
-            if point <= 30 * 1e6 * 0.2:
-                heatflux[index] = 30 * 1e6 * 0.2
+            if point <= self.input_data["HF_peak"] * 1e6 * 0.1:
+                heatflux[index] = self.input_data["HF_peak"] * 1e6 * 0.1
 
         sbar.insert(0, sbar[0])
         sbar.insert(0, 0)
         sbar.append(self.input_data["outer_radius"])
         self.sbar = sbar
 
-        heatflux.insert(0, 30 * 1e6 * 0.2)
-        heatflux.insert(0, 30 * 1e6 * 0.2)
-        heatflux.append(30 * 1e6 * 0.2)
+        heatflux.insert(0, self.input_data["HF_peak"] * 1e6 * 0.1)
+        heatflux.insert(0, self.input_data["HF_peak"] * 1e6 * 0.1)
+        heatflux.append(self.input_data["HF_peak"] * 1e6 * 0.1)
 
         # plt.plot(sbar, heatflux)
         # plt.xlabel("distance, cm")
         # plt.ylabel("Heat Flux, MW/m2")
 
         self.HFf = interp1d(sbar, heatflux)
-    
+
     def hexagon_starter(self, cp, point_x1, line_angle, topy):
-        
-        width = self.input_data["width"]
+
+        width = self.input_data["width"] + 2 * self.input_data["thickness"]
         height = width / 2 * tan(60 * pi / 180)
-        
+
         no_points_y = int(round(topy/height, 0))
         no_points_x = int(round(((self.input_data["outer_radius"]-point_x1) /
                                  (1.5*width)), 0))
 
-        a = width/2
-        self.cross_sectional_area = (3 * sqrt(3) / 2) * a ** 2
+        self.cross_sectional_area = (3 * sqrt(3) / 2) * (width/2) ** 2
 
         for i in range(no_points_x):
             for j in range(no_points_y):
                 cp.append([i*1.5*width + point_x1, j*height])
                 cp.append([i*1.5*width + 0.75*width + point_x1, 
                            j*height + 0.5*height])
-        
+
         return cp, height, width
 
     def squares_starter(self, cp, point_x1, line_angle, topy):
-        
+
         height = self.input_data["height"]
         width = self.input_data["width"]
         self.cross_sectional_area = height * width
-        
+
         no_points_y = int(round(topy/height, 0))
         no_points_x = int(round((self.input_data["outer_radius"]-point_x1) /
                                  (width), 0))
@@ -600,7 +656,7 @@ class Panel:
         for i in range(no_points_x):
             for j in range(no_points_y):
                 cp.append([i*width + point_x1, j*height])
-                
+        
         return cp, width, height
 
     def configure_hexagons(self):
@@ -624,32 +680,85 @@ class Panel:
 
     def configure_squares(self):
 
-        # calculate mass flows
-        first_channel = [i for i in self.panel_hexagons if i[5] <= self.rset[1]]
-        Ma, u = mach_number_sympy(373.15, Ma = 0.1)
-        mass_flow, u, Ajet, density, D = mass_flow_sympy(373.15, 100E5, u = u)
-        total_mass_flow_to_system = mass_flow * len(first_channel)
+        mach_numbers = []
+        mass_flow_totals = []
+        mach_number_iter = 0
+        number_of_cells = []
+        error = lambda Ma_iter, Ma_target: sqrt((Ma_iter - Ma_target)**2)
+        peak_metal_temperature = 0
+        break_flag = 0
+
+        while mach_number_iter != self.mach_number:
+            
+            for get_plotting_data in range(2):
+                input_pressure = self.input_data["input_pressure"]
+                input_temperature = self.input_data["input_temperature"]
+
+                for i in range(self.m1+1):
+                    pressure_drop, input_temperature, mach_number_iter, peak_metal_temperature, VJ_cells = \
+                        Channel.repeated_operations_squares(self, self.assessment_set[i], self.n[i], i, \
+                        peak_metal_temperature, input_pressure, input_temperature, self.mass_flow_total, self.HFf, self.cross_sectional_area)
+                    input_pressure += - pressure_drop
+                    if input_pressure <= 0:
+                        break_flag = 1
+                        break
+
+                mach_numbers.append(mach_number_iter)
+                mass_flow_totals.append(self.mass_flow_total)
+                
+                if mach_number_iter == self.mach_number:
+                    break
+                elif error(mach_number_iter, self.mach_number) <= 1E-3:
+                    break
+                elif break_flag == 1:
+                    break
+                elif mach_number_iter <= self.mach_number:
+                    self.mass_flow_total += 2.0
+                elif mach_number_iter >= self.mach_number:
+                    self.mass_flow_total -= 0.5
+            
+            if error(mach_number_iter, self.mach_number) <= 1E-3:
+                break
+            elif break_flag == 1:
+                break
+            
+            mach_mass = interp1d(mach_numbers, mass_flow_totals)
+            try:
+                self.mass_flow_total = float(mach_mass(self.mach_number))
+            except ValueError:
+                continue
 
         input_pressure = self.input_data["input_pressure"]
         input_temperature = self.input_data["input_temperature"]
-        self.fluid_properties = Material()
-        self.fluid_properties.helium(input_pressure, input_temperature)
 
-        non_dimensional_mass_flow, mass_flow, \
-            self.fluid_properties.specific_heat_capacity = \
-            mstar_sympy(input_temperature, input_pressure,
-                        self.cross_sectional_area, massflow=mass_flow)
-        reynolds_number, u = \
-            Reynolds_sympy(self.fluid_properties.density,
-                           self.fluid_properties.viscosity, D, u=u)
-        euler_number, reynolds_number = Euler_sympy("JIVC", Re=reynolds_number)
-        pressure_drop, euler_number, jet_velocity = \
-            pdrop_sympy(self.fluid_properties.density, Eu=euler_number,
-                        u=u)
-        non_dimensional_temperature, non_dimensional_mass_flow = \
-            taus_sympy("JIVC", mstar=non_dimensional_mass_flow)
+        mach_numbers = []
+        peak_metal_temperature = 0
+        VJ_cells_panel = []
 
-    def bounding_box(self, first_radius, second_radius, cp_final_y, rotation_theta_set, split_theta):
+        for i in range(self.m1 + self.m2 + 1):
+
+            pressure_drop, input_temperature, mach_number_iter, peak_metal_temperature, VJ_cells = \
+                Channel.repeated_operations_squares(self, self.assessment_set[i], self.n[i], i, \
+                peak_metal_temperature, input_pressure, input_temperature, self.mass_flow_total, self.HFf, self.cross_sectional_area)
+            input_pressure += - pressure_drop
+            
+            if input_pressure <= 0:
+                break_flag = 1
+                break
+            
+            mach_numbers.append(mach_number_iter)
+            number_of_cells.append(len(self.assessment_set[i]) * self.n[i])
+            VJ_cells_panel.append(VJ_cells)
+
+        self.break_flag = break_flag
+        self.VJ_cells = VJ_cells_panel
+        self.peak_metal_temperature = peak_metal_temperature
+        self.number_of_cells = number_of_cells
+        self.mach_numbers = mach_numbers
+        self.output_pressure = input_pressure
+
+    def bounding_box(self, first_radius, second_radius, cp_final_y, \
+                     rotation_theta_set, split_theta, assessment_set):
 
         cp = []  # a list for assigning centre points of hexagon array, (x, y)
         cp_remove = []  # list of values to remove from cp as are out of bounds
@@ -681,7 +790,7 @@ class Panel:
             try:
                 arc(first_radius, coordinates[1])
             except:
-                None
+                pass
             else:
                 if arc(first_radius, coordinates[1]) >= coordinates[0]:
                     cp_remove.append(coordinates)
@@ -690,7 +799,7 @@ class Panel:
             try:
                 arc(second_radius, coordinates[1])
             except:
-                None
+                pass
             else:
                 if arc(second_radius, coordinates[1]) <= coordinates[0]:
                     cp_remove.append(coordinates)
@@ -721,9 +830,8 @@ class Panel:
                 count2 += 1
         self.n_slabs = (count1 + count2) / 2.0
         self.n_jets_per_slab = count
-        # print([(count1 + count2) / 2.0, count, count1, count2])
 
-        # - 
+        assessment_set.append(array(deepcopy(cp_final)))
 
         for i in rotation_theta_set:
             cpsets.append(array(deepcopy(cp_final)))
@@ -743,49 +851,152 @@ class Panel:
         for i in cp_final:
             cp_final_y.append(deepcopy(i))
 
-        return cp_final_y
+        return cp_final_y, assessment_set
 
     def populate_cells(self):
 
         # - centre point definitions, same for both codes
 
         cp_final_y = []
+        assessment_set = []
         rotation_set = []
         theta_set = []
+        R1 = self.input_data["strike_radius"] - self.half_width
+        R2 = self.input_data["strike_radius"] + self.half_width
 
-        # - allows for a an m value of 1
-    
-        # try:
-        #     n = array([int(ni) for ni in self.input_data["n"]])
-        # except TypeError:
-        #     n = array([int(self.input_data["n"])])
-        # m = int(self.input_data["m"])
-        
-        if len(self.n) != self.m:
-            # print([len(n), m])
+        if len(self.n) != self.m1 + self.m2 + 1:
+
             raise Exception(""" the number of radial slices is not equal to the number of provided lateral slices """)
 
-        self.rset = linspace(self.input_data["inner_radius"], \
+        if self.cell_type == "DLH":
+            self.rset = linspace(self.input_data["inner_radius"], \
                         self.input_data["outer_radius"], \
                         self.m+1)
+        elif self.cell_type == "JIVC":
+            self.rset = concat([linspace(self.input_data["inner_radius"], R1, self.m1 + 1), \
+                        linspace(R2, self.input_data["outer_radius"], self.m2 + 1)])
+
         rset = self.rset
-        # print(rset)
+        
         theta_set = ((((360.0 / (self.input_data["number_of_plates"] * self.n * \
                     self.input_data["number_of_carriers"])) / 2) - \
-                    (self.input_data["swept_angle_gap_between_plates"]/2)) * \
-                    pi / 180)
+                    (self.input_data["swept_angle_gap_between_plates"] / 2)) * \
+                    pi / 180.0)
 
         for i, ni in enumerate(self.n):
-
-            rotation_set.append(theta_set[i] * ni * 2 * linspace((ni-1)*(1/(2*ni)), - (ni-1)*(1/(2*ni)), ni))
+            rotation_set.append(theta_set[i] * ni * 2 * linspace((ni-1)*(1/(2*ni)), \
+                - (ni-1)*(1/(2*ni)), ni))
 
         for i, r in enumerate(rset):
             if len(rset) - 1 == i:
                 break
             else:
-                cp_final_y = self.bounding_box(r, rset[i+1], cp_final_y, rotation_set[i], theta_set[i])
+                cp_final_y, assessment_set = self.bounding_box(r, rset[i+1], \
+                cp_final_y, rotation_set[i], theta_set[i], assessment_set)
 
+        self.assessment_set = assessment_set
         self.panel_hexagons = cp_final_y
+    
+def write_out(results, unit_type):
+
+    if unit_type == "DLH":
+        
+        try:
+            mkdir("channel_data")
+        except FileExistsError:
+            pass
+
+        channel_headers = ["hexagons", 
+                        "hexagons per channel", 
+                        "channel output pressure", 
+                        "jet mach number", 
+                        "jet velocity",
+                        "mass flow per hexagon", 
+                        "mass flow per channel", 
+                        "jet reynolds number", 
+                        "jet euler number", 
+                        "non dimensional temperature", 
+                        "non dimensional mass flow", 
+                        "maximum heat sink surface temperature", 
+                        "jet density", 
+                        "jet viscosity", 
+                        "jet specific heat capacity", 
+                        "break flag"]
+    
+        channel_data = [[] for i in channel_headers]
+    
+        for key in keys:
+            for index, channel in enumerate(results[key].channels):
+                channel_data[0].append(str(key))
+                channel_data[1].append(len(channel.hexagons))
+                channel_data[2].append(channel.output_pressure)
+                channel_data[3].append(channel.mach_number)
+                channel_data[4].append(channel.jet_velocity)
+                channel_data[5].append(channel.mass_flow)
+                channel_data[6].append(channel.mass_flow * len(channel.hexagons))
+                channel_data[7].append(channel.reynolds_number)
+                channel_data[8].append(channel.euler_number)
+                channel_data[9].append(channel.non_dimensional_temperature)
+                channel_data[10].append(channel.non_dimensional_mass_flow)
+                channel_data[11].append(channel.max_temperature)
+                channel_data[12].append(channel.fluid_properties.density)
+                channel_data[13].append(channel.fluid_properties.viscosity)
+                channel_data[14].append(channel.fluid_properties.specific_heat_capacity)
+                channel_data[15].append(channel.break_flag)
+    
+        keys_and_data = {k:v for k,v in zip(channel_headers, channel_data)}
+        channel_data = DataFrame.from_dict(keys_and_data)
+        channel_data.to_excel("channel_data/dataframe_trial.xlsx")
+    
+        f = open("hexagon_data.asc", "w")
+        for key in keys:
+            for channel in results[key].channels:
+                for hexagon in channel.hexagons:
+                    f.write(str(hexagon.x) + "\t" + str(hexagon.y) + "\t" +
+                            str(hexagon.metal_temperature) + "\t" +
+                            str(hexagon.developed_coolant_temperature))
+                    f.write("\n")
+            f.write(key)
+            f.write("\n")
+        f.close()
+    
+    else:
+        
+        try:
+            mkdir("panel_data")
+        except FileExistsError:
+            try:
+                mkdir("panel_data/cell_data")
+            except FileExistsError:
+                pass
+
+        panel_headers = ["output_pressure", "mass_flow_total", "m1", "m2", \
+                         "half_width", "peak_metal_temperature", "break_flag"]
+        panel_data = [[] for i in panel_headers]
+
+        for key in keys:
+            for index, header in enumerate(panel_headers):
+                panel_data[index].append(getattr(results[key], header))
+
+        keys_and_data = {k:v for k,v in zip(panel_headers, panel_data)}
+        panel_data = DataFrame.from_dict(keys_and_data)
+        panel_data.to_excel("panel_data/top_level_data.xlsx")
+
+        panel_headers = ["x", "y", "R", "metal_temperature", "developed_coolant_temperature", \
+                         "taus", "heatflux", "input_temperature", "mass_flow", "Cp"]
+        panel_data = [[] for i in panel_headers]
+
+        for key in keys:
+            file = "panel_data/cell_data/%s.xlsx" % (key)
+            for VJ_cell_group in results[key].VJ_cells:
+                for VJ_cell in VJ_cell_group:
+                    for index, header in enumerate(panel_headers):
+                        panel_data[index].append(getattr(VJ_cell, header))
+    
+            keys_and_data = {k:v for k,v in zip(panel_headers, panel_data)}
+            panel_data = DataFrame.from_dict(keys_and_data)
+            panel_data.to_excel(file)
+            panel_data = [[] for i in panel_headers]
 
 if __name__ == "__main__":
     start_time = time.time()
@@ -793,81 +1004,35 @@ if __name__ == "__main__":
     # BUSINESS CODE
 
     results = dict()
-    number_of_hexagons_range = linspace(1000, 4000, 1)  # 4
-    mach_number_range = linspace(0.2, 0.3, 1)  # 4
+    number_of_units_range = linspace(100, 4000, 1)  # 4
+    mach_number_range = linspace(0.15, 0.25, 3)  # 4
     mass_split_range = linspace(0.5, 0.9, 1)  # 2
+    mass_flow_total = 4 # kg/s
     distribution_options = ["strikepoint"]  # strikepoint inout
-    layup_options = ["HF_specific"]  # structured HF_specific
-
-    for layup in layup_options:
-        for distribution in distribution_options:
-            for number_of_hexagons in number_of_hexagons_range:
-                for mach_number in mach_number_range:
-                    for mass_split in mass_split_range:
-
-                        key = "panel" + "_" + \
-                            str(number_of_hexagons) + "_" + \
-                            str(mach_number) + "_" + \
-                            str(mass_split) + "_" + \
-                            str(layup) + "_" + \
-                            str(distribution)
-
-                        panel = Panel(float(mach_number), "inputs.xml", "q_adjusted.asc",
-                                      number_of_hexagons_in_first_channel = int(number_of_hexagons), 
-                                      mass_split = float(mass_split), layup_type = layup, 
-                                      distribution_type = distribution, n = 1, m = 1) # n, m = 1 for DLH
-                        panel("JIVC")
-
-                        results[key] = panel
+    layup_options = ["structured"]  # structured HF_specific
+    centre_channel_half_width = linspace(0.05, 0.25, 5)
+    m1_range = linspace(1, 5, 5, dtype = int)
+    m2_range = linspace(1, 5, 5, dtype = int)
+    count = 0
+    
+    for mach_number in mach_number_range:
+        print("mach number %1.2f" % mach_number)
+        for R in centre_channel_half_width:
+            print("half width %1.2f" % R)
+            for m1 in m1_range:
+                print("m1 %i" % m1)
+                for m2 in m2_range:
+                    print("m2 %i" % m2)
+                    key = "panel" + str(count)
+                    count += 1
+                    panel = Panel(float(mach_number), "inputs.xml", "q.asc",
+                                  n = array([10 for i in range(m1 + m2 + 1)]), m1 = m1, m2 = m2,
+                                  mass_flow_total = mass_flow_total, centre_channel_half_width = R) # n, m = 1 for DLH
+        
+                    panel("JIVC")
+        
+                    results[key] = panel
 
     keys = results.keys()
 
-    # f = open("hexagon_centre_points.asc", "w")
-    # for key in keys:
-    #     for channel in results[key].channels:
-    #         for hexagon in channel.hexagons:
-    #             f.write(str(hexagon.x) + "\t" + "0" + "\t" + str(hexagon.y))
-    #             f.write("\n")
-    # f.close()
-
-    f = open("hexagon_centre_points.asc", "w")
-    for key in keys:
-        for hexagon in results[key].panel_hexagons:
-            f.write(str(hexagon[0]) + "\t" + "0" + "\t" + str(hexagon[2]))
-            f.write("\n")
-    f.close()
-
-    f = open("hexagon_data.asc", "w")
-    for key in keys:
-        for channel in results[key].channels:
-            for hexagon in channel.hexagons:
-                f.write(str(hexagon.x) + "\t" + str(hexagon.y) + "\t" +
-                        str(hexagon.metal_temperature) + "\t" +
-                        str(hexagon.developed_coolant_temperature))
-                f.write("\n")
-        f.write(key)
-        f.write("\n")
-    f.close()
-
-    f = open("channel_data.asc", "w")
-    for key in keys:
-        for index, channel in enumerate(results[key].channels):
-            f.write(str(key) + "\t" + \
-                    # str(channel.channel_ID) + "\t" + \
-                    str(len(channel.hexagons)) + "\t" + \
-                    str(channel.output_pressure) + "\t" + \
-                    str(channel.mach_number) + "\t" + \
-                    str(channel.mass_flow) + "\t" + \
-                    str(channel.mass_flow * len(channel.hexagons)) + "\t" + \
-                    str(channel.reynolds_number) + "\t" + \
-                    str(channel.euler_number) + "\t" + \
-                    str(channel.jet_velocity) + "\t" + \
-                    str(channel.non_dimensional_temperature) + "\t" + \
-                    str(channel.non_dimensional_mass_flow) + "\t" + \
-                    str(channel.max_temperature) + "\t" + \
-                    str(channel.fluid_properties.density) + "\t" + \
-                    str(channel.fluid_properties.viscosity) + "\t" + \
-                    str(channel.fluid_properties.specific_heat_capacity) + \
-                    "\t" + str(channel.break_flag))
-            f.write("\n")
-    f.close()
+    write_out(results, "JIVC")
