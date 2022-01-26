@@ -98,8 +98,8 @@ if __name__ == "__main__":
     n_list = []
     m_list = []
 
-    m = linspace(1, 10, 10, dtype = int)
-    n = linspace(1, 10, 10, dtype = int)
+    m = linspace(10, 10, 1, dtype = int)
+    n = linspace(2, 10, 1, dtype = int)
     Ma = linspace(0.2, 0.3, 1)
     labels = ["n = %s, m = %s" % (ni, mi) for ni in n for mi in m]
     n_list = [array(linspace(nx, nx, mx, dtype = int)) for ni, nx in enumerate(n) \
