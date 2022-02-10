@@ -15,4 +15,13 @@
 <jet_diameter>0.001</jet_diameter>
 <number_of_carriers>3</number_of_carriers>
 <HF_peak>10</HF_peak>
+<mach_number>0.2</mach_number>
+<number_of_hexagons_in_first_channel>75</number_of_hexagons_in_first_channel>
+<mass_split>0.5</mass_split>
+<layup_type>structured</layup_type>
+<distribution_type>HF_specific</distribution_type>
+<m1>5</m1>
+<m2>5</m2>
+<mass_flow_total>4</mass_flow_total>
+<half_width>0.06</half_width>
 </inputdata>
