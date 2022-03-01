@@ -7,6 +7,20 @@ from os import mkdir
 from time import time
 import xml.etree.ElementTree as ET
 
+class XML:
+
+    @property
+    def xml_data(self):
+        return self._xml_data
+
+    @xml_data.setter
+    def xml_data(self, new_xml_file):
+        self._xml_data = new_xml_file
+
+    @xml_data.deleter
+    def xml_data(self):
+        del self._xml_data
+
 class SetupFile:
 
     def save(self, log):
@@ -18,7 +32,7 @@ class SetupFile:
 
         data = ET.Element("input_data")
         ET.SubElement(data, "cell_type", attrib = {"type":"DLH"})
-        ET.SubElement(data, "number_of_plates", attrib = {"min":"12", "max":"12", "num":"1"})
+        ET.SubElement(data, "number_of_plates", attrib = {"min":"14", "max":"14", "num":"1"})
         ET.SubElement(data, 'width', attrib = {"min":"0.0032", "max":"0.0032", "num":"1"})
         ET.SubElement(data, 'height', attrib = {"min":"0.00308", "max":"0.00308", "num":"1"})
         ET.SubElement(data, 'inner_radius', attrib = {"min":"1.093", "max":"1.093", "num":"1"})
@@ -33,15 +47,16 @@ class SetupFile:
         ET.SubElement(data, 'number_of_carriers', attrib = {"min":"3", "max":"3", "num":"1"})
         ET.SubElement(data, 'HF_peak', attrib = {"min":"10", "max":"10", "num":"1"})
         ET.SubElement(data, 'mach_number', attrib = {"min":"0.2", "max":"0.2", "num":"1"})
-        ET.SubElement(data, 'number_of_hexagons_in_first_channel', attrib = {"min":"75", "max":"75", "num":"1"})
+        ET.SubElement(data, 'number_of_hexagons_in_first_channel', attrib = {"min":"3000", "max":"3000", "num":"1"})
         ET.SubElement(data, 'mass_split', attrib = {"min":"0.5", "max":"0.5", "num":"1"})
         ET.SubElement(data, 'layup_type', attrib = {"type":"structured"})
-        ET.SubElement(data, 'distribution_type', attrib = {"type":"strikepoint"})
+        ET.SubElement(data, 'distribution_type', attrib = {"type":"inout"})
         ET.SubElement(data, 'm1', attrib = {"min":"2", "max":"2", "num":"1"})
         ET.SubElement(data, 'm2', attrib = {"min":"2", "max":"2", "num":"1"})
         ET.SubElement(data, 'mass_flow_total', attrib = {"min":"4", "max":"4", "num":"1"})
         ET.SubElement(data, 'half_width', attrib = {"min":"0.06", "max":"0.06", "num":"1"})
         ET.SubElement(data, 'thickness', attrib = {"min":"0", "max":"0", "num":"1"})
+        ET.SubElement(data, "direction", attrib = {"type":"0"})
 
         mydata = ET.tostring(data)
         myfile = open(directory + "/parameter_sweep.xml", "wb")
@@ -206,6 +221,7 @@ class WriteFile:
         ET.SubElement(data, 'mass_flow_total')
         ET.SubElement(data, 'half_width')
         ET.SubElement(data, 'thickness')
+        ET.SubElement(data, "direction")
 
         mydata = ET.tostring(data)
         myfile = open(directory + "/run_%i.xml" % run_ID, "wb")
@@ -284,6 +300,8 @@ def write_out(results, cell_type, layup):
             f.write("\n")
     f.close()
 
+
+
 if __name__ == "__main__":
     start_time = time()
 
@@ -293,3 +311,4 @@ if __name__ == "__main__":
     # log.save(results)
     
     # write_out(results, "DLH", "structured")
+

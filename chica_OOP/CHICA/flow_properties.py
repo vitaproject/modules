@@ -14,12 +14,12 @@ def mach_number_sympy(group_data, trigger = "mach_number", R = 8.3145, M = 4.003
     :param float M: Molar mass
     :param float gamma: Isentropic expansion factor
     """
-    
+
     Ma_calc, u_calc, gamma_calc, Ti_calc, R_calc, M_calc = \
         symbols("Ma_calc u_calc gamma_calc Ti_calc R_calc M_calc")
-    
+
     eq = Eq(u_calc / ((gamma_calc * Ti_calc * (R_calc/M_calc))**0.5), Ma_calc)
-    
+
     if trigger == "mach_number":
         Ma_calculated = solve(eq, Ma_calc)
         Ma = float(Ma_calculated[0].subs([(gamma_calc, gamma),\
@@ -28,7 +28,7 @@ def mach_number_sympy(group_data, trigger = "mach_number", R = 8.3145, M = 4.003
                                           (R_calc, R), \
                                           (M_calc, M)]))
         group_data["mach_number"] = Ma
-    
+
     else:
         u_calculated = solve(eq, u_calc)
         u = float(u_calculated[0].subs([(gamma_calc, gamma),\
@@ -37,7 +37,6 @@ def mach_number_sympy(group_data, trigger = "mach_number", R = 8.3145, M = 4.003
                                         (R_calc, R), \
                                         (M_calc, M)]))
         group_data["jet_velocity"] = u
-    
 
 def mass_flow_sympy(group_data, trigger = "mass_flow", D = 0.001):
     

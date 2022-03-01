@@ -14,7 +14,6 @@ class Cassette:
     def __init__(self, input_file, heat_flux_file):
 
         self.channels = []
-        self.panel_hexagon = []
         self.read_inputs(input_file, heat_flux_file)
         n = array([4 for i in range(int(self.input_data["m1"]) +
                                     int(self.input_data["m2"]) + 1)])
@@ -24,20 +23,22 @@ class Cassette:
         
         if self.input_data["cell_type"] == "DLH":
             self.cells = DLHCells(self.input_data)
+            self.cells.start_DLH()
             self.configure_DLH()
 
         elif self.input_data["cell_type"] == "JIVC":
             self.cells = JIVCCells(self.input_data)
-            self.configure_JIVC()
+            self.cells.start_JIVC()
+            # self.configure_JIVC()
 
         else:
             raise ValueError("Error, no cell type assigned")
 
     def configure_DLH(self):
-        
+
         # adds hexagons to middle channel and calcs flow properties
         self.channels.append(Group.create_DLH_first_channel(self.input_data, self.cells))
-        # self.mass_flow_total = self.channels[0].mass_flow_total
+        self.mass_flow_total = self.channels[0].group_data["mass_flow_total"]
 
         implementation_options = {"strikepoint": self.strikepoint_DLH,
                                   "inout": self.inout_DLH}
@@ -46,36 +47,62 @@ class Cassette:
         run = implementation_options[implementation_choice]
         run(self.channels[0])
 
-        # output_pressures = []
-        # output_metal_temperatures = []
-        # output_coolant_temperatures = []
-        # number_of_channels = 0
-        # break_flag = []
+    def inout_DLH(self, first_channel):
 
-        # for channel in self.channels:
-        #     output_pressures.append(channel.output_pressure)
-        #     number_of_channels += 1
-        #     output_metal_temperatures.append(channel.max_temperature)
-        #     output_coolant_temperatures.append(channel.output_temperature)
-        #     break_flag.append(channel.break_flag)
-        
-        # self.output_pressure = min(output_pressures)
-        # self.number_of_channels = number_of_channels
-        # self.peak_metal_temperature = max(output_metal_temperatures)
-        # self.peak_coolant_temperature = max(output_coolant_temperatures)
-        # self.break_flag = max(break_flag)
+        if self.input_data["layup_type"] == "structured":
 
-    def configure_JIVC(self):
-        
-        implementation_options = {"strikepoint_structured": self.strikepoint_structured_JIVC,
-                                  "strikepoint_HF_specific": self.strikepoint_HF_specific_JIVC,
-                                  "inout_structured": self.inout_structured_JIVC, 
-                                  "inout_HF_specific": self.inout_HF_specific_JIVC}
+            setup = self.inout_wrapper(self.structured_DLH)
+            setup(first_channel)
 
-        implementation_choice = self.distribution_type + "_" + self.layup_type
+        elif self.input_data["layup_type"] == "HF_specific":
 
-        run = implementation_options[implementation_choice]
-        run()
+            setup = self.inout_wrapper(self.HF_specific)
+            setup(first_channel)
+
+    def inout_wrapper(self, func):
+
+        def wrapper(*args, **kwargs):
+
+            # all_remaining_hexagons, first_channel = 
+            func(*args, **kwargs)
+
+            new_channels = [[]]
+
+            self.mass_flow_actual = [self.mass_flow_total]
+
+            self.add_channels(new_channels, self.channels[0])
+
+            for direction in new_channels:
+                for channel in direction:
+                    self.channels.append(channel)
+            return
+
+        return wrapper
+
+    def structured_DLH(self, first_channel):
+
+        first_channel.group_data["specified_number_of_hexagons"] = \
+            first_channel.group_data["number_of_hexagons_in_first_channel"]
+
+        self.cells.heat_cells = [sorted(self.cells.heat_cells, key=lambda x: x[5], reverse=False)]
+
+        # all_remaining_hexagons = self.cells
+
+        # return all_remaining_hexagons, first_channel
+
+    def HF_specific_DLH(self, first_channel):
+
+        first_round = [[first_channel]] # try to work this without this statement
+
+        self.cells.heat_cells = sorted(self.cells.heat_cells, key=lambda x: x[3], reverse=False)
+
+        inboard_hexagons, outboard_hexagons = [hexagons for hexagons in self.cells.heat_cells if hexagons[4]
+             <= 0.0], [hexagons for hexagons in self.cells.heat_cells if hexagons[4] >= 0.0]
+
+        # self.dummy_set_all_remaining_hexagons = [deepcopy(inboard_hexagons)] # currently used, not ideal
+        self.cells.heat_cells = [inboard_hexagons, outboard_hexagons]
+
+        # return all_remaining_hexagons, first_round
 
     def strikepoint_DLH(self, first_channel):
 
@@ -88,7 +115,7 @@ class Cassette:
         all_remaining_hexagons = [inboard_hexagons, outboard_hexagons]
 
         self.mass_flow_actual = [first_channel["mass_flow_total"] * (1-first_channel["mass_flow_split"]),
-                                 first_channel["mass_flow_total"] * first_channel["mass_flow_split"]]
+                                  first_channel["mass_flow_total"] * first_channel["mass_flow_split"]]
 
         self.add_channels(all_remaining_hexagons, new_channels, first_channel)
 
@@ -98,52 +125,40 @@ class Cassette:
         for channel in new_channels[1]:
             self.channels.append(channel)
 
-    def inout_DLH(self, first_channel):
+    def add_channels(self, new_channels, first_channel):
+        # doesn't work for inout + HF specific
+        layup_options = {"structured": Group.create_DLH_structured_channel,
+                         "HF_specific": Group.create_DLH_HF_specific_channel}
 
-        new_channels = [[]]
+        layup_selection = layup_options[self.input_data["layup_type"]]
 
-        if self.layup_type == "structured":
+        for index, direction in enumerate(self.cells.heat_cells):
 
-            reordered_hexagons = sorted(
-                self.panel_hexagons, key=lambda x: x[5], reverse=False)
+            mass_flow_actual = self.mass_flow_actual[index]
+            first_channel.group_data["direction"] = index
 
-            all_remaining_hexagons = [reordered_hexagons]
+            new_channels[index].append(layup_selection(first_channel.group_data, self.cells))
 
-            self.mass_flow_actual = [self.mass_flow_total]
+            while len(direction) >= 1.0:
+                new_channels[index].append(layup_selection(new_channels[index][-1].group_data, self.cells))
+                        # self.panel_hexagons, self.HFf,
+                        #             self.cross_sectional_area, direction,
+                        #             new_channels[index][-1],
+                        #             mass_flow_actual))
+                if new_channels[index][-1].group_data["break_flag"] == 1:
+                    break
 
-            self.add_channels(all_remaining_hexagons, new_channels,
-                              first_channel)
+    def configure_JIVC(self):
 
-            for direction in new_channels:
-                for channel in direction:
-                    self.channels.append(channel)
+        implementation_options = {"strikepoint_structured": self.strikepoint_structured_JIVC,
+                                  "strikepoint_HF_specific": self.strikepoint_HF_specific_JIVC,
+                                  "inout_structured": self.inout_structured_JIVC, 
+                                  "inout_HF_specific": self.inout_HF_specific_JIVC}
 
-        elif self.layup_type == "HF_specific":
+        implementation_choice = self.distribution_type + "_" + self.layup_type
 
-            first_round = [[first_channel]]
-            self.new_channels = [[]]
-
-            reordered_hexagons = sorted(
-                self.panel_hexagons, key=lambda x: x[3], reverse=False)
-            inboard_hexagons, outboard_hexagons = \
-                [hexagons for hexagons in reordered_hexagons if hexagons[4]
-                 <= 0.0], [hexagons for hexagons in reordered_hexagons if
-                           hexagons[4] >= 0.0]
-
-            self.dummy_set_all_remaining_hexagons = \
-                [deepcopy(inboard_hexagons)]
-            all_remaining_hexagons = [inboard_hexagons, outboard_hexagons]
-
-            self.mass_flow_actual = [self.mass_flow_total]
-
-            self.add_channels(all_remaining_hexagons, first_round,
-                              first_channel)
-
-            self.channels = []
-
-            for direction in self.new_channels:
-                for channel in direction:
-                    self.channels.append(channel)
+        run = implementation_options[implementation_choice]
+        run()
 
     def inout_HF_specific_JIVC(self):
         pass
@@ -509,110 +524,84 @@ class Cassette:
             self.output_pressure = 0
             self.manifold_pipe_diameters = manifold_pipe_diameters
             self.delta_break_flag = delta_break_flag
-        
-    def add_channels(self, all_remaining_hexagons, new_channels,
-                     first_channel):
-        # doesn't work for inout + HF specific
-        layup_options = {"structured": Group.create_DLH_structured_channel,
-                         "HF_specific": Group.create_DLH_HF_specific_channel}
 
-        layup_selection = layup_options[self.layup_type]
+    # def add_channels_inout_FIX(self):
 
-        for index, direction in enumerate(all_remaining_hexagons):
+    #     # HF_specific from middle out to get channel sizes
+    #     dummy_hexagons = deepcopy(self.panel_hexagons)
 
-            mass_flow_actual = self.mass_flow_actual[index]
+    #     for direction in self.dummy_set_all_remaining_hexagons:
 
-            new_channels[index].append(
-                layup_selection(self.panel_hexagons, self.HFf,
-                                self.cross_sectional_area, direction,
-                                first_channel, mass_flow_actual))
+    #         mass_flow_actual = self.mass_flow_actual[0]
 
-            while len(direction) >= 1.0:
-                new_channels[index].append(
-                    layup_selection(self.panel_hexagons, self.HFf,
-                                    self.cross_sectional_area, direction,
-                                    new_channels[index][-1],
-                                    mass_flow_actual))
-                if new_channels[index][-1].break_flag == 1:
-                    break
+    #         new_channels[0].append(
+    #             Group.create_HF_specific_channel(
+    #                 dummy_hexagons, self.HFf, self.cross_sectional_area,
+    #                 direction, first_channel, mass_flow_actual))
 
-    def add_channels_inout_FIX(self):
+    #         while len(direction) >= 1.0:
 
-        # HF_specific from middle out to get channel sizes
-        dummy_hexagons = deepcopy(self.panel_hexagons)
+    #             new_channels[0].append(
+    #                 Group.create_HF_specific_channel(
+    #                     dummy_hexagons, self.HFf,
+    #                     self.cross_sectional_area, direction,
+    #                     new_channels[0][-1], mass_flow_actual))
+    #             if new_channels[0][-1].break_flag == 1:
+    #                 break
 
-        for direction in self.dummy_set_all_remaining_hexagons:
+    #     new_channels[0].reverse()
+    #     self.populate_cells()
 
-            mass_flow_actual = self.mass_flow_actual[0]
+    #     self.layup_type = "structured"
 
-            new_channels[0].append(
-                Group.create_HF_specific_channel(
-                    dummy_hexagons, self.HFf, self.cross_sectional_area,
-                    direction, first_channel, mass_flow_actual))
+    #     self.number_of_hexagons_in_first_channel = \
+    #         len(new_channels[0][0].hexagons)
+    #     self.mach_number = new_channels[0][0].mach_number
 
-            while len(direction) >= 1.0:
+    #     self.new_channels[0].append(
+    #         Group.create_first_channel(
+    #             self.input_data["input_pressure"],
+    #             self.input_data["input_temperature"], self.panel_hexagons,
+    #             self.HFf, self.cross_sectional_area,
+    #             self.number_of_hexagons_in_first_channel,
+    #             self.distribution_type, self.layup_type,
+    #             Ma=self.mach_number))
 
-                new_channels[0].append(
-                    Group.create_HF_specific_channel(
-                        dummy_hexagons, self.HFf,
-                        self.cross_sectional_area, direction,
-                        new_channels[0][-1], mass_flow_actual))
-                if new_channels[0][-1].break_flag == 1:
-                    break
+    #     self.mass_flow_total = self.new_channels[0][0].mass_flow_total
 
-        new_channels[0].reverse()
-        self.populate_cells()
+    #     reordered_hexagons = sorted(
+    #         self.panel_hexagons, key=lambda x: x[5], reverse=False)
+    #     all_remaining_hexagons = [reordered_hexagons]
 
-        self.layup_type = "structured"
+    #     del new_channels[0][0]
 
-        self.number_of_hexagons_in_first_channel = \
-            len(new_channels[0][0].hexagons)
-        self.mach_number = new_channels[0][0].mach_number
+    #     for i, direction in enumerate(all_remaining_hexagons):
 
-        self.new_channels[0].append(
-            Group.create_first_channel(
-                self.input_data["input_pressure"],
-                self.input_data["input_temperature"], self.panel_hexagons,
-                self.HFf, self.cross_sectional_area,
-                self.number_of_hexagons_in_first_channel,
-                self.distribution_type, self.layup_type,
-                Ma=self.mach_number))
+    #         mass_flow_actual = self.mass_flow_total
 
-        self.mass_flow_total = self.new_channels[0][0].mass_flow_total
+    #         for index, channel in enumerate(new_channels[0]):
 
-        reordered_hexagons = sorted(
-            self.panel_hexagons, key=lambda x: x[5], reverse=False)
-        all_remaining_hexagons = [reordered_hexagons]
+    #             self.new_channels[0].append(
+    #                 Group.create_structured_channel(
+    #                     self.panel_hexagons, self.HFf,
+    #                     self.cross_sectional_area, direction,
+    #                     self.new_channels[0][-1], mass_flow_actual,
+    #                     specified_number_of_hexagons=
+    #                     len(channel.hexagons)))
 
-        del new_channels[0][0]
+    #             if self.new_channels[0][-1].break_flag == 1:
+    #                 break
 
-        for i, direction in enumerate(all_remaining_hexagons):
+    #         while len(direction) >= 1.0:
 
-            mass_flow_actual = self.mass_flow_total
+    #             self.new_channels[0].append(
+    #                 Group.create_HF_specific_channel(
+    #                     self.panel_hexagons, self.HFf,
+    #                     self.cross_sectional_area, direction,
+    #                     self.new_channels[0][-1], mass_flow_actual))
 
-            for index, channel in enumerate(new_channels[0]):
-
-                self.new_channels[0].append(
-                    Group.create_structured_channel(
-                        self.panel_hexagons, self.HFf,
-                        self.cross_sectional_area, direction,
-                        self.new_channels[0][-1], mass_flow_actual,
-                        specified_number_of_hexagons=
-                        len(channel.hexagons)))
-
-                if self.new_channels[0][-1].break_flag == 1:
-                    break
-
-            while len(direction) >= 1.0:
-
-                self.new_channels[0].append(
-                    Group.create_HF_specific_channel(
-                        self.panel_hexagons, self.HFf,
-                        self.cross_sectional_area, direction,
-                        self.new_channels[0][-1], mass_flow_actual))
-
-                if self.new_channels[0][-1].break_flag == 1:
-                    break
+    #             if self.new_channels[0][-1].break_flag == 1:
+    #                 break
 
     def read_inputs(self, inputs_filename, q_filename):
         # read asc files and store results to member variables (self...)
