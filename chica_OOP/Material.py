@@ -13,7 +13,6 @@ class Material:
             input_pressure, self.material)
         self.specific_heat_capacity = SI("C", "T", input_temperature, "P",
             input_pressure, self.material)
-    
     def solid_properties(self):
         # find a solid properties library, similar to CoolProp
         pass

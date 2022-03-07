@@ -8,11 +8,9 @@ class HeatCell:
     cell_ID = 0
 
     def __init__(self, cell_data, group_data):
-    
-        self.x = cell_data.x
-        self.z = cell_data.z
-        self.R = sqrt((self.x**2) + (self.z**2))
-        heatflux = group_data["HFf"](self.R) * group_data["cross_sectional_area"]
+
+        self.cell_data = cell_data
+        heatflux = group_data["HFf"](self.cell_data.R3) * group_data["cross_sectional_area"]
 
         self.metal_temperature = metal_temperature_sympy(
             group_data["input_temperature"],

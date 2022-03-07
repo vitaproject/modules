@@ -1,5 +1,4 @@
 from math import sqrt, pi
-from CoolProp.CoolProp import PropsSI as SI
 from sympy import symbols, Eq, solve
 
 def mach_number_sympy(group_data, trigger = "mach_number", R = 8.3145, M = 4.003E-3, gamma = 1.667):
@@ -51,8 +50,9 @@ def mass_flow_sympy(group_data, trigger = "mass_flow", D = 0.001):
     :param float Ajet: Jet cross-sectional area
     """
     
-    density = SI("D", "T", group_data["input_temperature"], "P",\
-                 group_data["input_temperature"], "helium")
+    # density = SI("D", "T", group_data["input_pressure"], "P",\
+    #               group_data["input_temperature"], "helium")
+    density = group_data["fluid_properties"].density
     Ajet = pi * ((D/2)**2) # * 13 # < - group of inlets in an inlet
     
     roe, u_calc, mass_flow_calc, Ajet_calc = \
@@ -322,33 +322,37 @@ def coolant_temperature_sympy(taus, Tinput, metal_temperature):
     
     return Tnew
 
-def mass_flow_next_row(coordinates, cross_sectional_area, HFf, mass_flow, \
-    cp, Tinput, Tpeak, mass_flow_actual, cell_type, t = 0.001, ks = 340):
-    
-    if cell_type == "DLH":
+def mass_flow_next_row(group_data, cells, t = 0.001, ks = 340):
+
+    if group_data["cell_type"] == "DLH":
         phi, theta, omega = [4.415, 0.6242, 0.7828]
     else:
         phi, theta, omega = [5.83, 0.7648, 1.743]
-    
-    Ri = sqrt(coordinates[0]**2 + coordinates[2]**2)
-    HFi = HFf(Ri) * cross_sectional_area
-    
-    A = mass_flow
-    B = phi * (((cp * t) / (ks * cross_sectional_area))**theta)
+
+    # Ri = sqrt(coordinates[0]**2 + coordinates[2]**2)    
+    Ri = cells.heat_cells[group_data["direction"]][0].R3
+    HFi = group_data["HFf"](Ri) * group_data["cross_sectional_area"]
+
+    A = group_data["mass_flow"]
+    B = phi * (((group_data["fluid_properties"].specific_heat_capacity * t) / (ks * group_data["cross_sectional_area"]))**theta)
     C = omega
-    D = HFi / (cp * (Tpeak - Tinput))
-    
+    D = HFi / (group_data["fluid_properties"].specific_heat_capacity * (group_data["max_temperature"] - group_data["input_temperature"]))
+
     Anew = lambda A, B, C, D: A - ((A - ((A**theta) * D * B) - (D * C))/(1 - (theta * (A **-(1-theta)) * D * B)))
     A_updated = Anew(A, B, C, D)
-    
+
     if D == 0:
-        massflow = 0.0
+        mass_flow = 0.0
         ni = 0.0
     else:   
         while sqrt((A_updated - A)**2) >= 1e-10:
             A = A_updated
+
             A_updated = Anew(A, B, C, D)
-        massflow = A_updated
-        ni = mass_flow_actual / massflow ## in this case, number of jets total
+        mass_flow = A_updated
+        ni = group_data["mass_flow_total"] / mass_flow ## in this case, number of jets total
     
-    return massflow, ni
+    group_data["mass_flow"] = mass_flow
+    group_data["specified_number_of_hexagons"] = ni
+    
+    # return massflow, ni
